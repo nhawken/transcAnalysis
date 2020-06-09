@@ -7,7 +7,7 @@
 
 
 # set up R and some variables ----------------------------
-setwd("~/Aaron/Projects/CIRM/")
+setwd("C://Users/natha/Documents/Geschwind Rotation 2020/transcAnalysis")
 options(stringsAsFactors = FALSE)
 library(cowplot)
 library(data.table)
@@ -22,7 +22,7 @@ library(wesanderson)
 library(patchwork)
 
 outputfile_counter = 1
-outputFolder = "/path/to/output/" # SET AN OUTPUT PATH HERE
+outputFolder = paste(getwd(), '/process_OUT/', sep = "") # SET AN OUTPUT PATH HERE
 dir.create(outputFolder, showWarnings = F, recursive = T)
 #time0 <- proc.time()
 
