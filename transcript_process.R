@@ -159,21 +159,23 @@ QCheatMap <-  function(datQC,datMeta,covars,outputfolder,outputfile_counter){
 
 #Load Expression, Meta and QC data  and format them ----------------------------------------
 #LOAD DATA HERE
+load(all_transcript_data.Rdata)
+
 
 # (2) Filter genes with less than 10 counts in 60% of  samples per ID ------------
-if(FALSE){
+if(TRUE){
   gene_filter_list<- lapply(unique(datMeta$Day.grouped), function(d){
     
     filter_conds <- matrix(NA, nrow = 21, ncol = 10)
     datMetaDxd <- datMeta %>% 
       filter(Day.grouped == d)
-    datExprDxd <- datExpr[,datMetaDxd$SampleID,drop=F]
+    datTransDxd <- datTrans[,datMetaDxd$SampleID,drop=F]
     
     for (i in 0:20) {
       for (j in seq(0.1,1,0.1)) {
         
-        pres <- apply(datExprDxd > i,1,sum)
-        idx <- length(which(pres >= j*ncol(datExprDxd)))
+        pres <- apply(datTransrDxd > i,1,sum)
+        idx <- length(which(pres >= j*ncol(datTransDxd)))
         filter_conds[i + 1, j *10] <- idx
         
       }
@@ -208,17 +210,47 @@ idx <- vector()
 for(day in unique(datMeta$Day.grouped)){
   datMetaDxd <- datMeta %>% 
     filter(Day.grouped == day)
-  datExprDxd <- datExpr[,datMetaDxd$SampleID,drop=F]
-  pres <- apply(datExprDxd>10,1,sum)
-  idx <- union(idx, which(pres > 0.3*dim(datExprDxd)[2]))
+  datTransDxd <- datTransRaw[,datMetaDxd$SampleID,drop=F]
+  pres <- apply(datTransDxd>10,1,sum)
+  idx <- union(idx, which(pres > 0.3*dim(datTransDxd)[2]))
 }
-datExpr <- datExpr[idx,]
+datTrans <- datTransRaw[idx,]
 # (3) View Data Pre-Normalization and Pre-QC -------------------------------
 ## raw statistics
+viewData <- function(meta_data, expr_data, log_transform = "F", cvrs = c("Dx","batch","Differentiation.day","Sex")){
+  clrs <- as.factor(meta_data$Dx)
+  if (log_transform) {
+    expr_data <- log2(expr_data + 1)
+  }
+  boxplot(expr_data,range = 0, main = paste("Boxplot Counts"),xaxt = "n",
+          col = "white", medcol = clrs, whiskcol = clrs, staplecol = clrs, boxcol = clrs)
+  axis(1,at=c(1:dim(expr_data)[2]), labels = meta_data$Dx, las = 2, cex.axis = 0.6)
+  plot(density(expr_data[,1]),col = as.factor(meta_data$Dx)[1], main = paste("Density Counts Gene"),ylim = c(0, 0.35))
+  for (i in 2:dim(expr_data)[2]) {
+    lines(density(expr_data[,i]), col = as.factor(meta_data$Dx)[i])
+  }
+  mdsG = cmdscale(dist(t(expr_data)),eig = TRUE)
+  pc1 = mdsG$eig[1]^2 / sum(mdsG$eig^2)  
+  pc2 = mdsG$eig[2]^2 / sum(mdsG$eig^2)
+  mdsPlots <- cbind(meta_data,as.data.frame(mdsG$points)[match(meta_data$SampleID,rownames(mdsG$points)),])
+  colnames(mdsPlots)[c((ncol(mdsPlots)-1):ncol(mdsPlots))] <- c("MDS1","MDS2")
+  for (covar in cvrs){
+    p1 <-  ggplot(mdsPlots,aes_string(x="MDS1",y="MDS2",color=covar)) +
+      geom_point(size = 3) +
+      theme_minimal() + 
+      theme(legend.position="bottom") +
+      ggtitle(covar)
+    print(p1)
+  }
+}
+
+
 pdf(file=paste0(outputFolder,outputfile_counter,"_RawStatistics.pdf"),width=12,height=12)
-viewData(datMeta, datExpr, log_transform = T)
+viewData(datMeta, datTrans, log_transform = T)
 dev.off()
 outputfile_counter<-outputfile_counter+1
+
+
 
 # (4) Get Gene Annotaion --------------------------------------------
 # library(biomaRt)
