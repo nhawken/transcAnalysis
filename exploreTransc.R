@@ -1,4 +1,19 @@
 setwd( "C:/Users/natha/Documents/Geschwind Rotation 2020/transcAnalysis")
+
+options(stringsAsFactors = FALSE)
+library(cowplot)
+library(data.table)
+library(WGCNA)
+library(plyr)
+library(cqn)
+library(tidyverse)
+library(stringr)
+library(gridExtra)
+library(corrplot)
+library(wesanderson)
+library(patchwork)
+
+
 load('all_transcript_data.Rdata')
 Meta_row <- nrow(datMeta)
 Meta_col <- ncol(datMeta)
@@ -24,3 +39,22 @@ for(ii in 1:25){
   dup_frame2[(ii*2-1),] <- dup_anno_set[ii,]
   dup_frame2[(ii*2), ] <- dup_anno_set[(ii+25),]
 }
+
+#remove duplicated isoforms
+transAnno <- transcriptAnnoRaw %>%
+  filter(!duplicated(ensembl_transcript_id))
+
+#create isoform id in the format hgncsymbol_last 6 digits of ensembl isoform ID
+isoID <- data.frame(paste(transAnno$hgnc_symbol, str_sub(transAnno$ensembl_transcript_id, -6, -1), sep = "_"))
+transAnno_id <- cbind(transAnno, isoID)
+
+#find names of all unique genes in transcript annotation
+geneNames <- unique(transAnno_id$hgnc_symbol)
+
+#determine number of isoforms for each gene
+geneIsoCounts <- sapply(geneNames, function(geneNames){
+  name_log <- transAnno_id$hgnc_symbol == geneNames
+  sum(name_log)
+})
+  
+
