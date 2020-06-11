@@ -11,9 +11,9 @@ setwd("C://Users/natha/Documents/Geschwind Rotation 2020/transcAnalysis")
 options(stringsAsFactors = FALSE)
 library(cowplot)
 library(data.table)
-library(WGCNA)
+library(WGCNA) #had to install via BiocManager
 library(plyr)
-library(cqn)
+library(cqn) #had to install via BiocManager
 library(tidyverse)
 library(stringr)
 library(gridExtra)
@@ -27,19 +27,20 @@ dir.create(outputFolder, showWarnings = F, recursive = T)
 #time0 <- proc.time()
 
 # Functions -------------------------------------------------------------------------------------------------------
-viewData <- function(meta_data, expr_data, log_transform = "F", cvrs = c("Dx","batch","Differentiation.day","Sex")){
+# View data function edited to change "expr" to "trans" for data variable
+viewData <- function(meta_data, trans_data, log_transform = "F", cvrs = c("Dx","batch","Differentiation.day","Sex")){
   clrs <- as.factor(meta_data$Dx)
   if (log_transform) {
-    expr_data <- log2(expr_data + 1)
+    trans_data <- log2(trans_data + 1)
   }
-  boxplot(expr_data,range = 0, main = paste("Boxplot Counts"),xaxt = "n",
+  boxplot(trans_data,range = 0, main = paste("Boxplot Counts"),xaxt = "n",
           col = "white", medcol = clrs, whiskcol = clrs, staplecol = clrs, boxcol = clrs)
-  axis(1,at=c(1:dim(expr_data)[2]), labels = meta_data$Dx, las = 2, cex.axis = 0.6)
-  plot(density(expr_data[,1]),col = as.factor(meta_data$Dx)[1], main = paste("Density Counts Gene"),ylim = c(0, 0.35))
-  for (i in 2:dim(expr_data)[2]) {
-    lines(density(expr_data[,i]), col = as.factor(meta_data$Dx)[i])
+  axis(1,at=c(1:dim(trans_data)[2]), labels = meta_data$Dx, las = 2, cex.axis = 0.6)
+  plot(density(trans_data[,1]),col = as.factor(meta_data$Dx)[1], main = paste("Density Counts Gene"),ylim = c(0, 0.35))
+  for (i in 2:dim(trans_data)[2]) {
+    lines(density(trans_data[,i]), col = as.factor(meta_data$Dx)[i])
   }
-  mdsG = cmdscale(dist(t(expr_data)),eig = TRUE)
+  mdsG = cmdscale(dist(t(trans_data)),eig = TRUE)
   pc1 = mdsG$eig[1]^2 / sum(mdsG$eig^2)  
   pc2 = mdsG$eig[2]^2 / sum(mdsG$eig^2)
   mdsPlots <- cbind(meta_data,as.data.frame(mdsG$points)[match(meta_data$SampleID,rownames(mdsG$points)),])
@@ -217,32 +218,7 @@ for(day in unique(datMeta$Day.grouped)){
 datTrans <- datTransRaw[idx,]
 # (3) View Data Pre-Normalization and Pre-QC -------------------------------
 ## raw statistics
-viewData <- function(meta_data, expr_data, log_transform = "F", cvrs = c("Dx","batch","Differentiation.day","Sex")){
-  clrs <- as.factor(meta_data$Dx)
-  if (log_transform) {
-    expr_data <- log2(expr_data + 1)
-  }
-  boxplot(expr_data,range = 0, main = paste("Boxplot Counts"),xaxt = "n",
-          col = "white", medcol = clrs, whiskcol = clrs, staplecol = clrs, boxcol = clrs)
-  axis(1,at=c(1:dim(expr_data)[2]), labels = meta_data$Dx, las = 2, cex.axis = 0.6)
-  plot(density(expr_data[,1]),col = as.factor(meta_data$Dx)[1], main = paste("Density Counts Gene"),ylim = c(0, 0.35))
-  for (i in 2:dim(expr_data)[2]) {
-    lines(density(expr_data[,i]), col = as.factor(meta_data$Dx)[i])
-  }
-  mdsG = cmdscale(dist(t(expr_data)),eig = TRUE)
-  pc1 = mdsG$eig[1]^2 / sum(mdsG$eig^2)  
-  pc2 = mdsG$eig[2]^2 / sum(mdsG$eig^2)
-  mdsPlots <- cbind(meta_data,as.data.frame(mdsG$points)[match(meta_data$SampleID,rownames(mdsG$points)),])
-  colnames(mdsPlots)[c((ncol(mdsPlots)-1):ncol(mdsPlots))] <- c("MDS1","MDS2")
-  for (covar in cvrs){
-    p1 <-  ggplot(mdsPlots,aes_string(x="MDS1",y="MDS2",color=covar)) +
-      geom_point(size = 3) +
-      theme_minimal() + 
-      theme(legend.position="bottom") +
-      ggtitle(covar)
-    print(p1)
-  }
-}
+
 
 
 pdf(file=paste0(outputFolder,outputfile_counter,"_RawStatistics.pdf"),width=12,height=12)
@@ -259,38 +235,43 @@ outputfile_counter<-outputfile_counter+1
 # geneAnnoRaw <- getBM(attributes = getinfo,filters=c("ensembl_gene_id"),values=rownames(datExpr),mart=humanMart)
 # save(geneAnnoRaw,file="./data/GeneAnnotation_batch4.rda")
 
-geneAnno <-  geneAnno %>%
-  filter(ensembl_gene_id %in% rownames(datExpr)) %>%
-  filter(gene_biotype != "rRNA") %>% 
-  filter(!duplicated(ensembl_gene_id))
+transAnno <-  transcriptAnnoRaw %>%
+  filter(ensembl_transcript_id %in% rownames(datTrans)) %>%
+  filter(!duplicated(ensembl_transcript_id))
+  #filter(gene_biotype != "rRNA") %>% 
 
-datExpr <- datExpr[match(geneAnno$ensembl_gene_id,rownames(datExpr)),]
+#parts of the dataset that do not have an annotation
+#Ensembl transcript IDs are deprecated 
+datTransMissing <- datTrans[!(rownames(datTrans) %in% transAnno$ensembl_transcript_id),]
 
-stopifnot(all(geneAnno$ensembl_gene_id==rownames(datExpr)))
+#all trans data with active annotations
+datTrans <- datTrans[match(transAnno$ensembl_transcript_id,rownames(datTrans)),]
+
+stopifnot(all(transAnno$ensembl_transcript_id==rownames(datTrans)))
 
 # (5) Normalize ------------------------------------------------------
-datExpr_preNorm <- datExpr
+datTrans_preNorm <- datTrans
 
-datExprCQN <- cqn(datExpr,x=geneAnno$percentage_gene_gc_content, lengths= geneAnno$transcript_length,sqn=F ,verbose = T)
-RPKM.cqn <- datExprCQN$y + datExprCQN$offset
-datExpr.htg<-RPKM.cqn
+datTransCQN <- cqn(datTrans,x=transAnno$percentage_gene_gc_content, lengths= transAnno$transcript_length,sqn=F ,verbose = T)
+RPKM.cqn <- datTransCQN$y + datTransCQN$offset
+datTrans.htg<-RPKM.cqn
 
 ## Check difference in relationship to GC before and after normalization
-preNorm <- datExpr
-postNorm <- datExpr.htg
-keepgenes <- intersect(rownames(preNorm),rownames(postNorm))
+preNorm <- datTrans
+postNorm <- datTrans.htg
+keepisoforms <- intersect(rownames(preNorm),rownames(postNorm))
 
-preNorm <- preNorm[match(keepgenes,rownames(preNorm)),]
-postNorm <- postNorm[match(keepgenes,rownames(postNorm)),]
+preNorm <- preNorm[match(keepisoforms,rownames(preNorm)),]
+postNorm <- postNorm[match(keepisoforms,rownames(postNorm)),]
 
 qualMat <- matrix(NA,nrow=ncol(preNorm),ncol=4)
 colnames(qualMat) <- c("pre.Norm.GC.cor","pre.Norm.Length.cor","post.Norm.GC.cor","post.Norm.Length.cor")
 
 for (i in 1:nrow(qualMat)) {
-  qualMat[i,1] <- cor(preNorm[,i],geneAnno$percentage_gene_gc_content,method="spearman")
-  qualMat[i,2] <- cor(preNorm[,i],geneAnno$transcript_length,method="spearman")
-  qualMat[i,3] <- cor(postNorm[,i],geneAnno$percentage_gene_gc_content,method="spearman")
-  qualMat[i,4] <- cor(postNorm[,i],geneAnno$transcript_length,method="spearman")
+  qualMat[i,1] <- cor(preNorm[,i],transAnno$percentage_gene_gc_content,method="spearman")
+  qualMat[i,2] <- cor(preNorm[,i],transAnno$transcript_length,method="spearman")
+  qualMat[i,3] <- cor(postNorm[,i],transAnno$percentage_gene_gc_content,method="spearman")
+  qualMat[i,4] <- cor(postNorm[,i],transAnno$transcript_length,method="spearman")
 } 
 
 pdf(file=paste0(outputFolder,outputfile_counter,"_GC_noQN_length_correlations.pdf"),width=8,height=8)
@@ -353,10 +334,10 @@ outputfile_counter<-outputfile_counter+1
 
 # (7) View  Data Post-Normalization  ----------------------------------------------------------------
 ## View basic statistics
-datExpr <- datExpr.htg
+datTrans <- datTrans.htg
 
 pdf(file=paste0(outputFolder,outputfile_counter,"_ProcessedStatistics.pdf"))
-viewData(datMeta, datExpr.htg)
+viewData(datMeta, datTrans.htg)
 dev.off()
 outputfile_counter=outputfile_counter+1
 
@@ -364,7 +345,7 @@ outputfile_counter=outputfile_counter+1
 pc_n <- 20
 
 ## Get the first 5 PCs in the expr data
-thisdat.expr <- t(scale(t(datExpr.htg), scale = F)) 
+thisdat.expr <- t(scale(t(datTrans.htg), scale = F)) 
 ## Centers the mean of all genes - this means the PCA gives us the eigenvectors of the geneXgene covariance matrix, allowing us to assess the proportion of variance each component contributes to the data
 PC.expr <- prcomp(thisdat.expr)
 topPC.expr <- PC.expr$rotation[,1:pc_n]
