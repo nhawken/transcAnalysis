@@ -22,16 +22,16 @@ library(wesanderson)
 library(patchwork)
 
 outputfile_counter = 1
-outputFolder = paste(getwd(), '/process_OUT/', sep = "") # SET AN OUTPUT PATH HERE
+outputFolder = paste(getwd(), '/process_OUT_20200615/', sep = "") # SET AN OUTPUT PATH HERE
 dir.create(outputFolder, showWarnings = F, recursive = T)
 #time0 <- proc.time()
 
 # Functions -------------------------------------------------------------------------------------------------------
 # View data function edited to change "expr" to "trans" for data variable
 viewData <- function(meta_data, trans_data, log_transform = "F", cvrs = c("Dx","batch","Differentiation.day","Sex")){
-  clrs <- as.factor(meta_data$Dx)
+  clrs <- as.factor(meta_data$Dx) #what is this (turn str into number)
   if (log_transform) {
-    trans_data <- log2(trans_data + 1)
+    trans_data <- log2(trans_data + 1) #why plus one?
   }
   boxplot(trans_data,range = 0, main = paste("Boxplot Counts"),xaxt = "n",
           col = "white", medcol = clrs, whiskcol = clrs, staplecol = clrs, boxcol = clrs)
@@ -160,7 +160,7 @@ QCheatMap <-  function(datQC,datMeta,covars,outputfolder,outputfile_counter){
 
 #Load Expression, Meta and QC data  and format them ----------------------------------------
 #LOAD DATA HERE
-load(all_transcript_data.Rdata)
+load('all_transcript_data.Rdata')
 
 
 # (2) Filter genes with less than 10 counts in 60% of  samples per ID ------------
@@ -175,7 +175,7 @@ if(TRUE){
     for (i in 0:20) {
       for (j in seq(0.1,1,0.1)) {
         
-        pres <- apply(datTransrDxd > i,1,sum)
+        pres <- apply(datTransDxd > i,1,sum) #1 indicates function is applied over rows
         idx <- length(which(pres >= j*ncol(datTransDxd)))
         filter_conds[i + 1, j *10] <- idx
         
@@ -189,13 +189,13 @@ if(TRUE){
     lapply(function(m1){
       m1 %>% as.data.frame() %>% 
         set_names(paste0(seq(10,100,10),"%")) %>% 
-        mutate(min_num_expressing = 0:20) %>% 
+        mutate(min_num_expressing = 0:20) %>% #NOT SURE WHAT THIS DOES
         gather("fraction", "gene_num", matches("%")) %>% 
         mutate(fraction = factor(fraction, levels = paste0(seq(0,100,10),"%"))) 
     }) %>% 
     bind_rows(.id = "Day")
   
-  pdf(paste0(outputFolder,outputfile_counter,"_genefilter_threshold.pdf"), width = 14, height = 10)
+  pdf(paste0(outputFolder,outputfile_counter,"_genefilter_threshold.pdf"), width = 14, height = 10) #what determines width/height inches!
   ggplot(gene_filter_tidy, aes(x = min_num_expressing, y= gene_num, color = fraction)) +
     geom_point() +
     geom_line(aes(group = fraction)) + 
@@ -203,7 +203,7 @@ if(TRUE){
     # scale_y_continuous(breaks = seq(0,28000,2000)) +
     scale_x_continuous(breaks=seq(0,20,2)) +
     theme_bw(base_size = 20)
-  dev.off()
+  dev.off() #what is this?? device off, add tail to end of pdf file
   
 }
 
@@ -219,9 +219,34 @@ datTrans <- datTransRaw[idx,]
 # (3) View Data Pre-Normalization and Pre-QC -------------------------------
 ## raw statistics
 
+viewData <- function(meta_data, trans_data, log_transform = "F", cvrs = c("Dx","batch","Differentiation.day","Sex")){
+  clrs <- as.factor(meta_data$Dx) #what is this (turn str into number)
+  if (log_transform) {
+    trans_data <- log2(trans_data + 1) #why plus one?
+  }
+  boxplot(trans_data,range = 0, main = paste("Boxplot Counts"),xaxt = "n",
+          col = "white", medcol = clrs, whiskcol = clrs, staplecol = clrs, boxcol = clrs)
+  axis(1,at=c(1:dim(trans_data)[2]), labels = meta_data$Dx, las = 2, cex.axis = 0.6)
+  plot(density(trans_data[,1]),col = as.factor(meta_data$Dx)[1], main = paste("Density Counts Gene"),ylim = c(0, 0.35))
+  for (i in 2:dim(trans_data)[2]) {
+    lines(density(trans_data[,i]), col = as.factor(meta_data$Dx)[i])
+  }
+  mdsG = cmdscale(dist(t(trans_data)),eig = TRUE)
+  pc1 = mdsG$eig[1]^2 / sum(mdsG$eig^2)  
+  pc2 = mdsG$eig[2]^2 / sum(mdsG$eig^2)
+  mdsPlots <- cbind(meta_data,as.data.frame(mdsG$points)[match(meta_data$SampleID,rownames(mdsG$points)),])
+  colnames(mdsPlots)[c((ncol(mdsPlots)-1):ncol(mdsPlots))] <- c("MDS1","MDS2")
+  for (covar in cvrs){
+    p1 <-  ggplot(mdsPlots,aes_string(x="MDS1",y="MDS2",color=covar)) +
+      geom_point(size = 3) +
+      theme_minimal() + 
+      theme(legend.position="bottom") +
+      ggtitle(covar)
+    print(p1)
+  }
+}
 
-
-pdf(file=paste0(outputFolder,outputfile_counter,"_RawStatistics.pdf"),width=12,height=12)
+pdf(file=paste0(outputFolder,outputfile_counter,"_RawStatistics_80pct.pdf"),width=12,height=12)
 viewData(datMeta, datTrans, log_transform = T)
 dev.off()
 outputfile_counter<-outputfile_counter+1
@@ -249,20 +274,25 @@ datTrans <- datTrans[match(transAnno$ensembl_transcript_id,rownames(datTrans)),]
 
 stopifnot(all(transAnno$ensembl_transcript_id==rownames(datTrans)))
 
+rm('datMetaDxd','datTransDxd','datTransMissing','datTransRaw','transcriptAnnoRaw','pres')
 # (5) Normalize ------------------------------------------------------
-datTrans_preNorm <- datTrans
+#datTrans_preNorm <- datTrans
 
+#why CQN? are there other normalization options? what are the sqn and verbose options?
+gc()
 datTransCQN <- cqn(datTrans,x=transAnno$percentage_gene_gc_content, lengths= transAnno$transcript_length,sqn=F ,verbose = T)
-RPKM.cqn <- datTransCQN$y + datTransCQN$offset
+RPKM.cqn <- datTransCQN$y + datTransCQN$offset #does RPKM mean something? does .htg mean something?
 datTrans.htg<-RPKM.cqn
 
 ## Check difference in relationship to GC before and after normalization
 preNorm <- datTrans
 postNorm <- datTrans.htg
-keepisoforms <- intersect(rownames(preNorm),rownames(postNorm))
+keepisoforms <- intersect(rownames(preNorm),rownames(postNorm)) #why would the row names not all intersect?
 
 preNorm <- preNorm[match(keepisoforms,rownames(preNorm)),]
 postNorm <- postNorm[match(keepisoforms,rownames(postNorm)),]
+
+#does normalization remove degrees of freedom? no!
 
 qualMat <- matrix(NA,nrow=ncol(preNorm),ncol=4)
 colnames(qualMat) <- c("pre.Norm.GC.cor","pre.Norm.Length.cor","post.Norm.GC.cor","post.Norm.Length.cor")
@@ -274,7 +304,7 @@ for (i in 1:nrow(qualMat)) {
   qualMat[i,4] <- cor(postNorm[,i],transAnno$transcript_length,method="spearman")
 } 
 
-pdf(file=paste0(outputFolder,outputfile_counter,"_GC_noQN_length_correlations.pdf"),width=8,height=8)
+pdf(file=paste0(outputFolder,outputfile_counter,"_GC_noQN_length_correlations_80pct.pdf"),width=8,height=8)
 par(mfrow=c(2,2))
 hist(qualMat[,1],main=colnames(qualMat)[1],xlim=c(-0.5,0.2),ylim=c(0,80),breaks=seq(-0.5,0.2,by=0.01),xlab="Spearman's rho across samples")
 abline(v=0)
@@ -336,7 +366,34 @@ outputfile_counter<-outputfile_counter+1
 ## View basic statistics
 datTrans <- datTrans.htg
 
-pdf(file=paste0(outputFolder,outputfile_counter,"_ProcessedStatistics.pdf"))
+viewData <- function(meta_data, trans_data, log_transform = "F", cvrs = c("Dx","batch","Differentiation.day","Sex")){
+  clrs <- as.factor(meta_data$Dx)
+  if (log_transform) {
+    trans_data <- log2(trans_data + 1)
+  }
+  boxplot(trans_data,range = 0, main = paste("Boxplot Counts"),xaxt = "n",
+          col = "white", medcol = clrs, whiskcol = clrs, staplecol = clrs, boxcol = clrs)
+  axis(1,at=c(1:dim(trans_data)[2]), labels = meta_data$Dx, las = 2, cex.axis = 0.6)
+  plot(density(trans_data[,1]),col = as.factor(meta_data$Dx)[1], main = paste("Density Counts Gene"),ylim = c(0, 0.35))
+  for (i in 2:dim(trans_data)[2]) {
+    lines(density(trans_data[,i]), col = as.factor(meta_data$Dx)[i])
+  }
+  mdsG = cmdscale(dist(t(trans_data)),eig = TRUE)
+  pc1 = mdsG$eig[1]^2 / sum(mdsG$eig^2)  
+  pc2 = mdsG$eig[2]^2 / sum(mdsG$eig^2)
+  mdsPlots <- cbind(meta_data,as.data.frame(mdsG$points)[match(meta_data$SampleID,rownames(mdsG$points)),])
+  colnames(mdsPlots)[c((ncol(mdsPlots)-1):ncol(mdsPlots))] <- c("MDS1","MDS2")
+  for (covar in cvrs){
+    p1 <-  ggplot(mdsPlots,aes_string(x="MDS1",y="MDS2",color=covar)) +
+      geom_point(size = 3) +
+      theme_minimal() + 
+      theme(legend.position="bottom") +
+      ggtitle(covar)
+    print(p1)
+  }
+}
+
+pdf(file=paste0(outputFolder,outputfile_counter,"_ProcessedStatistics_80pct.pdf"))
 viewData(datMeta, datTrans.htg)
 dev.off()
 outputfile_counter=outputfile_counter+1
@@ -345,7 +402,7 @@ outputfile_counter=outputfile_counter+1
 pc_n <- 20
 
 ## Get the first 5 PCs in the expr data
-thisdat.expr <- t(scale(t(datTrans.htg), scale = F)) 
+thisdat.expr <- t(scale(t(datTrans.htg), scale = F))  #not sure what the transpose, scale, transpose is about
 ## Centers the mean of all genes - this means the PCA gives us the eigenvectors of the geneXgene covariance matrix, allowing us to assess the proportion of variance each component contributes to the data
 PC.expr <- prcomp(thisdat.expr)
 topPC.expr <- PC.expr$rotation[,1:pc_n]
@@ -354,12 +411,17 @@ topvar <- varexp[1:pc_n]
 colnames(topPC.expr) <- paste("expr\n",colnames(topPC.expr)," (",signif(100*topvar[1:pc_n],2),"%)",sep="")
 
 ## perform a PCA of the sequencing statistics
-large_qc <- which(apply(datQC, 2, mean) > 10 ^ 4)
-datQC[, large_qc] = log10(datQC[, large_qc])
-PC.datQC <- prcomp(na.omit(t(scale((datQC),scale = T))), center = T)
-varexp <- (PC.datQC$sdev) ^ 2 / sum(PC.datQC$sdev ^ 2)
+# large_qc <- which(apply(datQC, 2, mean) > 10 ^ 4)
+# datQC[, large_qc] = log10(datQC[, large_qc])
+# PC.datQC <- prcomp(na.omit(t(scale((datQC),scale = T))), center = T)
+# 
+# 
+# varexp <- (PC.datQC$sdev) ^ 2 / sum(PC.datQC$sdev ^ 2)
+# 
+# topPC.datQC <- PC.datQC$rotation[,1:pc_n]
+topPC.datQC <- datMeta[,paste0("SeqPC",1:pc_n)]
 
-topPC.datQC <- PC.datQC$rotation[,1:pc_n]
+
 colnames(topPC.datQC) <- paste0("SeqPC",1:pc_n)
 seq_qc_plot_data <- data.frame(var_exp = varexp) %>% 
   rowid_to_column("SeqPC") %>% 
@@ -385,6 +447,15 @@ pairsdat <-  pairsdat[,sapply(pairsdat, function(covar){length(unique(covar))}) 
 
 colnames(topPC.expr) <- gsub("\n"," ", colnames(topPC.expr))
 
+
+lm_vec <- function(matrix1, matrix2){
+  lapply(as.data.frame(matrix1), function(v1){
+    lapply(as.data.frame(matrix2), function(v2){
+      summary(lm(v1~v2))$"adj.r.squared"
+    }) %>% do.call(c,.)
+  }) %>% do.call(rbind, .)
+}
+
 qc_pc_rsqr <- lm_vec(topPC.expr,pairsdat)
 expr_pc_rsqr <- lm_vec(topPC.datQC,pairsdat)
 qc_expr_cor <- cor(x = topPC.expr, y = topPC.datQC, method = "s") 
@@ -393,7 +464,7 @@ pdf(file=paste0(outputFolder,outputfile_counter,".1_SeqStats_Comparison_corrplot
 corrplot(qc_pc_rsqr,method = "number", tl.col	= "black", mar = c(1,1,1,1), cl.align.text = "l",number.cex	= 0.75)
 corrplot(expr_pc_rsqr,method = "number", tl.col	= "black", mar = c(1,1,1,1), cl.align.text = "l",number.cex	= 0.75)
 corrplot(qc_expr_cor,method = "number", tl.col	= "black", mar = c(1,1,1,1), cl.align.text = "l",number.cex	= 0.75)
-seq_qc_plot1 +seq_qc_plot2
+# seq_qc_plot1 +seq_qc_plot2
 dev.off()
 
 outputfile_counter = outputfile_counter + 1
@@ -404,7 +475,7 @@ datMeta <- cbind(datMeta,topPC.datQC)
 # it is important to graph character covariates differently from numeric covariates - alter the code below to suit your needs
 
 
-pdf(file = paste0(outputFolder,outputfile_counter,"_datMeta_covariates.pdf"),height = 11,width = 7)
+pdf(file = paste0(outputFolder,outputfile_counter,"_datMeta_covariates_dx_tot.pdf"),height = 11,width = 7)
 par(mfrow = c(3,2))
 par(mar = c(5,2,3,2))
 
@@ -414,13 +485,21 @@ for (i in grep("SeqPC", colnames(datMeta), value = T)) {
   plot(as.numeric(datMeta[,i]) ~ as.factor(datMeta$Dx), col = rainbow(length(unique(datMeta$Dx))),
        main = paste(i," p=", signif(p,2)), ylab = "", xlab = "", las = 3)
 }
-#Plot covarience with QC data
-for (i in c(1:dim(datQC)[2])) {
-  A = anova(lm(as.numeric(datQC[,i]) ~ datMeta$Dx))
-  p = A$"Pr(>F)"[1];   
-  plot(as.numeric(as.character(datQC[,i])) ~ as.factor(datMeta$Dx), col = rainbow(length(unique(datMeta$Dx))),
-       main=paste(colnames(datQC)[i]," \np=", signif(p, 2)), ylab = "", xlab = "", las = 3)
+
+for (i in grep("expr PC", colnames(topPC.expr), value = T)) {
+  A = anova(lm(topPC.expr[,i] ~ as.factor(datMeta$Dx)))
+  p = A$"Pr(>F)"[1]
+  plot(as.numeric(topPC.expr[,i]) ~ as.factor(datMeta$Dx), col = rainbow(length(unique(datMeta$Dx))),
+       main = paste(i," p=", signif(p,2)), ylab = "", xlab = "", las = 3)
 }
+
+# #Plot covarience with QC data
+# for (i in c(1:dim(datQC)[2])) {
+#   A = anova(lm(as.numeric(datQC[,i]) ~ datMeta$Dx))
+#   p = A$"Pr(>F)"[1];   
+#   plot(as.numeric(as.character(datQC[,i])) ~ as.factor(datMeta$Dx), col = rainbow(length(unique(datMeta$Dx))),
+#        main=paste(colnames(datQC)[i]," \np=", signif(p, 2)), ylab = "", xlab = "", las = 3)
+# }
 dev.off()
 
 covars=c("Dx","Differentiation.day","Sex")
