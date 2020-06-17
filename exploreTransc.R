@@ -58,3 +58,18 @@ geneIsoCounts <- sapply(geneNames, function(geneNames){
 })
   
 
+#Annotate isoforms with the isoform module as determined in Transcriptome-wide isoform-level 
+#dysregulation in ASD, schizophrenia, and bipolar disorder
+#Gandal et al Science. 2018 Dec 14; 362(6420): eaat8127. doi: 10.1126/science.aat8127
+
+isoModules <- read.table("isoModulesPsychEncode2018.csv",header = TRUE, sep = ",", row.names = 1)
+
+
+isoModAnno <- sapply(transAnno$ensembl_transcript_id, function(anno){
+  idx_iso <- match(anno, row.names(isoModules))
+  isoModules$Module[idx_iso]
+})
+
+isoModAnnoDF <- data.frame(isoModAnno)
+colnames(isoModAnnoDF) <- 'module_gandal2018_sci'
+transAnno_iso <- cbind(transAnno, isoModAnnoDF)
