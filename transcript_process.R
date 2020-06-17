@@ -20,6 +20,7 @@ library(gridExtra)
 library(corrplot)
 library(wesanderson)
 library(patchwork)
+library(sva) #missing OG code, had to install via BiocManager
 
 outputfile_counter = 1
 outputFolder = paste(getwd(), '/process_OUT_20200615/', sep = "") # SET AN OUTPUT PATH HERE
@@ -215,7 +216,7 @@ for(day in unique(datMeta$Day.grouped)){
   pres <- apply(datTransDxd>10,1,sum)
   idx <- union(idx, which(pres > 0.3*dim(datTransDxd)[2]))
 }
-datTrans <- datTransRaw[idx,]
+datTrans_pre <- datTransRaw[idx,]
 # (3) View Data Pre-Normalization and Pre-QC -------------------------------
 ## raw statistics
 
@@ -316,6 +317,8 @@ hist(qualMat[,4],main=colnames(qualMat)[4],xlim=c(-0.2,0.8),ylim=c(0,60),breaks=
 abline(v=0)
 dev.off()
 outputfile_counter<-outputfile_counter+1
+
+rm('RPKM.cpq','preNorm','postNorm','datTransCQN')
 
 # # (6) Remove Outliers --------------------------------------------------------------------
 # sink(file=paste0(outputFolder,outputfile_counter,".1_Outliers.txt"))
@@ -471,6 +474,8 @@ outputfile_counter = outputfile_counter + 1
 stopifnot(all(rownames(topPC.datQC) == datMeta$SampleID))
 datMeta <- cbind(datMeta,topPC.datQC)
 
+
+
 # (9) Covariate Plots - want to look at all datMeta -----------------------------------------------------------
 # it is important to graph character covariates differently from numeric covariates - alter the code below to suit your needs
 
@@ -507,20 +512,54 @@ QCheatMap(datQC,datMeta ,covars, outputFolder,paste0(outputfile_counter,".1_QChe
 
 outputfile_counter=outputfile_counter+1
 
+rm('thisdat.expr','PC.expr','topPC.expr','topPC.datQC','pairsdat')
+gc()
+
+
 # (11) Regress technical and biological covariates  ----------------------------------------------
 covars_to_protect <- c("Dx","Day.grouped")
-covars_to_remove <- c("Sex", "Source.Tissue","ethnicityPC1","ethnicityPC1", paste0("SeqPC", 1:15))
+covars_to_remove <- c("Sex", "Source.Tissue","ethnicityPC1","ethnicityPC1", paste0("SeqPC", 1:20)) #edited to be 20 Pcs
 form2 <- paste("~", paste(c(covars_to_protect,covars_to_remove),collapse = "+"))
 
 X <-   model.matrix(as.formula(form2), data = datMeta)
-Y <-  datExpr.htg
+Y <-  datTrans.htg
 beta <-  (solve(t(X) %*% X) %*% t(X)) %*% t(Y)
 regress_indx <- grep("Intercept|Dx|Day.grouped",colnames(X), invert = T)
 to_regress <-  (as.matrix(X[,regress_indx]) %*% (as.matrix(beta[regress_indx,])))  #SeqPCs + covars
-datExpr_reg <-  datExpr.htg - t(to_regress)
+datTrans_reg <-  datTrans.htg - t(to_regress)
 
-pdf(file=paste0(outputFolder,outputfile_counter,"_ProcessedStatistics_reg_biol.pdf"))
-viewData(datMeta, datExpr_reg)
+rm('beta','regress_indx','to_regress','X','Y')
+gc()
+
+viewData <- function(meta_data, trans_data, log_transform = "F", cvrs = c("Dx","batch","Differentiation.day","Sex")){
+  clrs <- as.factor(meta_data$Dx) #what is this (turn str into number)
+  if (log_transform) {
+    trans_data <- log2(trans_data + 1) #why plus one?
+  }
+  boxplot(trans_data,range = 0, main = paste("Boxplot Counts"),xaxt = "n",
+          col = "white", medcol = clrs, whiskcol = clrs, staplecol = clrs, boxcol = clrs)
+  axis(1,at=c(1:dim(trans_data)[2]), labels = meta_data$Dx, las = 2, cex.axis = 0.6)
+  plot(density(trans_data[,1]),col = as.factor(meta_data$Dx)[1], main = paste("Density Counts Gene"),ylim = c(0, 0.35))
+  for (i in 2:dim(trans_data)[2]) {
+    lines(density(trans_data[,i]), col = as.factor(meta_data$Dx)[i])
+  }
+  mdsG = cmdscale(dist(t(trans_data)),eig = TRUE)
+  pc1 = mdsG$eig[1]^2 / sum(mdsG$eig^2)  
+  pc2 = mdsG$eig[2]^2 / sum(mdsG$eig^2)
+  mdsPlots <- cbind(meta_data,as.data.frame(mdsG$points)[match(meta_data$SampleID,rownames(mdsG$points)),])
+  colnames(mdsPlots)[c((ncol(mdsPlots)-1):ncol(mdsPlots))] <- c("MDS1","MDS2")
+  for (covar in cvrs){
+    p1 <-  ggplot(mdsPlots,aes_string(x="MDS1",y="MDS2",color=covar)) +
+      geom_point(size = 3) +
+      theme_minimal() + 
+      theme(legend.position="bottom") +
+      ggtitle(covar)
+    print(p1)
+  }
+}
+
+pdf(file=paste0(outputFolder,outputfile_counter,"_ProcessedStatistics_reg_biol_30pct.pdf"))
+viewData(datMeta, datTrans_reg)
 dev.off()
 
 outputfile_counter=outputfile_counter+1
@@ -528,12 +567,39 @@ outputfile_counter=outputfile_counter+1
 # (12) Batch correction  -------------------------------------------------------------------------------------------
 if(FALSE){
   #Don't run as it makes results more batchy (batch 4 doesn't have many controls)
+  gc()
   covars_model3 <- model.matrix(~Dx+Differentiation.day, data = datMeta)
   
-  datExpr_reg_batch <- sva::ComBat(datExpr_reg, batch = datMeta$batch, mod = covars_model3)
+  datTrans_reg_batch <- sva::ComBat(datTrans_reg, batch = datMeta$batch, mod = covars_model3)
   
+  viewData <- function(meta_data, trans_data, log_transform = "F", cvrs = c("Dx","batch","Differentiation.day","Sex")){
+    clrs <- as.factor(meta_data$Dx) #what is this (turn str into number)
+    if (log_transform) {
+      trans_data <- log2(trans_data + 1) #why plus one?
+    }
+    boxplot(trans_data,range = 0, main = paste("Boxplot Counts"),xaxt = "n",
+            col = "white", medcol = clrs, whiskcol = clrs, staplecol = clrs, boxcol = clrs)
+    axis(1,at=c(1:dim(trans_data)[2]), labels = meta_data$Dx, las = 2, cex.axis = 0.6)
+    plot(density(trans_data[,1]),col = as.factor(meta_data$Dx)[1], main = paste("Density Counts Gene"),ylim = c(0, 0.35))
+    for (i in 2:dim(trans_data)[2]) {
+      lines(density(trans_data[,i]), col = as.factor(meta_data$Dx)[i])
+    }
+    mdsG = cmdscale(dist(t(trans_data)),eig = TRUE)
+    pc1 = mdsG$eig[1]^2 / sum(mdsG$eig^2)  
+    pc2 = mdsG$eig[2]^2 / sum(mdsG$eig^2)
+    mdsPlots <- cbind(meta_data,as.data.frame(mdsG$points)[match(meta_data$SampleID,rownames(mdsG$points)),])
+    colnames(mdsPlots)[c((ncol(mdsPlots)-1):ncol(mdsPlots))] <- c("MDS1","MDS2")
+    for (covar in cvrs){
+      p1 <-  ggplot(mdsPlots,aes_string(x="MDS1",y="MDS2",color=covar)) +
+        geom_point(size = 3) +
+        theme_minimal() + 
+        theme(legend.position="bottom") +
+        ggtitle(covar)
+      print(p1)
+    }
+  }
   pdf(file=paste0(outputFolder,outputfile_counter,"_ProcessedStatistics_reg_combat.pdf"))
-  viewData(datMeta, datExpr_reg_batch, cvrs = c("Dx","batch","Differentiation.day","Sex","Source.Tissue"))
+  viewData(datMeta, datTrans_reg_batch, cvrs = c("Dx","batch","Differentiation.day","Sex","Source.Tissue"))
   dev.off()
   
   
@@ -547,7 +613,7 @@ if(FALSE){
 
 # (13) Test PCA after corrections-------------------------------------------------------
 pc_n <- 20
-thisdat.expr <- t(scale(t(datExpr_reg_batch), scale = F)) 
+thisdat.expr <- t(scale(t(datTrans_reg_batch), scale = F)) 
 ## Centers the mean of all genes - this means the PCA gives us the eigenvectors of the geneXgene covariance matrix, allowing us to assess the proportion of variance each component contributes to the data
 PC.expr <- prcomp(thisdat.expr)
 topPC.expr <- PC.expr$rotation[,1:pc_n]
