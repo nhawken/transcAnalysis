@@ -23,11 +23,11 @@ library(patchwork)
 library(sva) #missing OG code, had to install via BiocManager
 
 outputfile_counter = 1
-outputFolder = paste(getwd(), '/process_OUT_20200615/', sep = "") # SET AN OUTPUT PATH HERE
+outputFolder = paste(getwd(), '/process_OUT_20200619/', sep = "") # SET AN OUTPUT PATH HERE
 dir.create(outputFolder, showWarnings = F, recursive = T)
 #time0 <- proc.time()
 
-# Functions -------------------------------------------------------------------------------------------------------
+# (0) Functions -------------------------------------------------------------------------------------------------------
 # View data function edited to change "expr" to "trans" for data variable
 viewData <- function(meta_data, trans_data, log_transform = "F", cvrs = c("Dx","batch","Differentiation.day","Sex")){
   clrs <- as.factor(meta_data$Dx) #what is this (turn str into number)
@@ -159,7 +159,7 @@ QCheatMap <-  function(datQC,datMeta,covars,outputfolder,outputfile_counter){
 }
 
 
-#Load Expression, Meta and QC data  and format them ----------------------------------------
+# (1) Load Expression, Meta and QC data  and format them ----------------------------------------
 #LOAD DATA HERE
 load('all_transcript_data.Rdata')
 
@@ -216,7 +216,7 @@ for(day in unique(datMeta$Day.grouped)){
   pres <- apply(datTransDxd>10,1,sum)
   idx <- union(idx, which(pres > 0.3*dim(datTransDxd)[2]))
 }
-datTrans_pre <- datTransRaw[idx,]
+datTrans <- datTransRaw[idx,]
 # (3) View Data Pre-Normalization and Pre-QC -------------------------------
 ## raw statistics
 
@@ -247,14 +247,14 @@ viewData <- function(meta_data, trans_data, log_transform = "F", cvrs = c("Dx","
   }
 }
 
-pdf(file=paste0(outputFolder,outputfile_counter,"_RawStatistics_80pct.pdf"),width=12,height=12)
+pdf(file=paste0(outputFolder,outputfile_counter,"_RawStatistics.pdf"),width=12,height=12)
 viewData(datMeta, datTrans, log_transform = T)
 dev.off()
 outputfile_counter<-outputfile_counter+1
 
 
 
-# (4) Get Gene Annotaion --------------------------------------------
+# (4) Get Gene Annotation --------------------------------------------
 # library(biomaRt)
 # getinfo <- c("ensembl_gene_id","hgnc_symbol","chromosome_name","band","strand","start_position", "end_position","gene_biotype","transcript_length","percentage_gene_gc_content")
 # humanMart <- useMart(biomart="ensembl",dataset="hsapiens_gene_ensembl") #change if working with differnet spieces
@@ -268,6 +268,8 @@ transAnno <-  transcriptAnnoRaw %>%
 
 #parts of the dataset that do not have an annotation
 #Ensembl transcript IDs are deprecated 
+
+
 datTransMissing <- datTrans[!(rownames(datTrans) %in% transAnno$ensembl_transcript_id),]
 
 #all trans data with active annotations
@@ -318,7 +320,7 @@ abline(v=0)
 dev.off()
 outputfile_counter<-outputfile_counter+1
 
-rm('RPKM.cpq','preNorm','postNorm','datTransCQN')
+rm('RPKM.cqn','preNorm','postNorm','datTransCQN')
 
 # # (6) Remove Outliers --------------------------------------------------------------------
 # sink(file=paste0(outputFolder,outputfile_counter,".1_Outliers.txt"))
@@ -498,6 +500,8 @@ for (i in grep("expr PC", colnames(topPC.expr), value = T)) {
        main = paste(i," p=", signif(p,2)), ylab = "", xlab = "", las = 3)
 }
 
+
+
 # #Plot covarience with QC data
 # for (i in c(1:dim(datQC)[2])) {
 #   A = anova(lm(as.numeric(datQC[,i]) ~ datMeta$Dx))
@@ -512,11 +516,13 @@ QCheatMap(datQC,datMeta ,covars, outputFolder,paste0(outputfile_counter,".1_QChe
 
 outputfile_counter=outputfile_counter+1
 
-rm('thisdat.expr','PC.expr','topPC.expr','topPC.datQC','pairsdat')
-gc()
 
 
 # (11) Regress technical and biological covariates  ----------------------------------------------
+
+rm('thisdat.expr','PC.expr','topPC.datQC','pairsdat')
+gc()
+
 covars_to_protect <- c("Dx","Day.grouped")
 covars_to_remove <- c("Sex", "Source.Tissue","ethnicityPC1","ethnicityPC1", paste0("SeqPC", 1:20)) #edited to be 20 Pcs
 form2 <- paste("~", paste(c(covars_to_protect,covars_to_remove),collapse = "+"))
@@ -558,7 +564,7 @@ viewData <- function(meta_data, trans_data, log_transform = "F", cvrs = c("Dx","
   }
 }
 
-pdf(file=paste0(outputFolder,outputfile_counter,"_ProcessedStatistics_reg_biol_30pct.pdf"))
+pdf(file=paste0(outputFolder,outputfile_counter,"_ProcessedStatistics_reg_biol_80pct.pdf"))
 viewData(datMeta, datTrans_reg)
 dev.off()
 
@@ -598,7 +604,7 @@ if(FALSE){
       print(p1)
     }
   }
-  pdf(file=paste0(outputFolder,outputfile_counter,"_ProcessedStatistics_reg_combat.pdf"))
+  pdf(file=paste0(outputFolder,outputfile_counter,"_ProcessedStatistics_reg_combat_80pct.pdf"))
   viewData(datMeta, datTrans_reg_batch, cvrs = c("Dx","batch","Differentiation.day","Sex","Source.Tissue"))
   dev.off()
   
@@ -623,6 +629,15 @@ colnames(topPC.expr) <- paste("expr ",colnames(topPC.expr)," (",signif(100*topva
 
 pairsdat <- datMeta[,c("Dx","Day.grouped","Sex", "batch", "Source.Tissue")]
 pairsdat[,c(1:4)] <- lapply(pairsdat[,c(1:4)],as.factor)
+
+
+lm_vec <- function(matrix1, matrix2){
+  lapply(as.data.frame(matrix1), function(v1){
+    lapply(as.data.frame(matrix2), function(v2){
+      summary(lm(v1~v2))$"adj.r.squared"
+    }) %>% do.call(c,.)
+  }) %>% do.call(rbind, .)
+}
 
 qc_pc_rsqr <- lm_vec(topPC.expr,pairsdat) %>% t()
 
