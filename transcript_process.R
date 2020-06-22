@@ -23,7 +23,7 @@ library(patchwork)
 library(sva) #missing OG code, had to install via BiocManager
 
 outputfile_counter = 1
-outputFolder = paste(getwd(), '/process_OUT_20200619/', sep = "") # SET AN OUTPUT PATH HERE
+outputFolder = paste(getwd(), '/process_OUT_20200622/', sep = "") # SET AN OUTPUT PATH HERE
 dir.create(outputFolder, showWarnings = F, recursive = T)
 #time0 <- proc.time()
 
@@ -277,7 +277,7 @@ datTrans <- datTrans[match(transAnno$ensembl_transcript_id,rownames(datTrans)),]
 
 stopifnot(all(transAnno$ensembl_transcript_id==rownames(datTrans)))
 
-rm('datMetaDxd','datTransDxd','datTransMissing','datTransRaw','transcriptAnnoRaw','pres')
+rm('datMetaDxd','datTransDxd','datTransMissing','transcriptAnnoRaw','pres')
 # (5) Normalize ------------------------------------------------------
 #datTrans_preNorm <- datTrans
 
@@ -307,7 +307,7 @@ for (i in 1:nrow(qualMat)) {
   qualMat[i,4] <- cor(postNorm[,i],transAnno$transcript_length,method="spearman")
 } 
 
-pdf(file=paste0(outputFolder,outputfile_counter,"_GC_noQN_length_correlations_80pct.pdf"),width=8,height=8)
+pdf(file=paste0(outputFolder,outputfile_counter,"_GC_noQN_length_correlations.pdf"),width=8,height=8)
 par(mfrow=c(2,2))
 hist(qualMat[,1],main=colnames(qualMat)[1],xlim=c(-0.5,0.2),ylim=c(0,80),breaks=seq(-0.5,0.2,by=0.01),xlab="Spearman's rho across samples")
 abline(v=0)
@@ -398,7 +398,7 @@ viewData <- function(meta_data, trans_data, log_transform = "F", cvrs = c("Dx","
   }
 }
 
-pdf(file=paste0(outputFolder,outputfile_counter,"_ProcessedStatistics_80pct.pdf"))
+pdf(file=paste0(outputFolder,outputfile_counter,"_ProcessedStatistics.pdf"))
 viewData(datMeta, datTrans.htg)
 dev.off()
 outputfile_counter=outputfile_counter+1
@@ -474,7 +474,7 @@ dev.off()
 
 outputfile_counter = outputfile_counter + 1
 stopifnot(all(rownames(topPC.datQC) == datMeta$SampleID))
-datMeta <- cbind(datMeta,topPC.datQC)
+# datMeta <- cbind(datMeta,topPC.datQC)
 
 
 
@@ -564,7 +564,7 @@ viewData <- function(meta_data, trans_data, log_transform = "F", cvrs = c("Dx","
   }
 }
 
-pdf(file=paste0(outputFolder,outputfile_counter,"_ProcessedStatistics_reg_biol_80pct.pdf"))
+pdf(file=paste0(outputFolder,outputfile_counter,"_ProcessedStatistics_reg_biol.pdf"))
 viewData(datMeta, datTrans_reg)
 dev.off()
 
@@ -604,14 +604,14 @@ if(FALSE){
       print(p1)
     }
   }
-  pdf(file=paste0(outputFolder,outputfile_counter,"_ProcessedStatistics_reg_combat_80pct.pdf"))
+  pdf(file=paste0(outputFolder,outputfile_counter,"_ProcessedStatistics_reg_combat.pdf"))
   viewData(datMeta, datTrans_reg_batch, cvrs = c("Dx","batch","Differentiation.day","Sex","Source.Tissue"))
   dev.off()
   
   
   outputfile_counter=outputfile_counter+1
 } else {
-  datExpr_reg_batch <- datExpr_reg #combat looked like it was pulling out batch4 
+  datTrans_reg_batch <- datTrans_reg #combat looked like it was pulling out batch4 
 }
 
 
@@ -693,17 +693,20 @@ dev.off()
 
 #  (14) save and wrap up  -----------------------------------------------------------------------------------------
 
+# save(datMeta,
+#      datQC, 
+#      datExprRaw,  # raw counts
+#      datExpr.htg, # normalized counts
+#      # datExpr_reg_tech, # counts after regressing out seqPC per batch
+#      datExpr_reg, # counts after regressing out seqPC per batch and biological covars
+#      datExpr_reg_batch, # counts after regressing out seqPC per batch and biological covars and batch corrected
+#      file = paste0(outputFolder,"input_for_DE_all.rdata"))
+
+
 save(datMeta,
-     datQC, 
-     datExprRaw,  # raw counts
-     datExpr.htg, # normalized counts
-     # datExpr_reg_tech, # counts after regressing out seqPC per batch
-     datExpr_reg, # counts after regressing out seqPC per batch and biological covars
-     datExpr_reg_batch, # counts after regressing out seqPC per batch and biological covars and batch corrected
-     file = paste0(outputFolder,"input_for_DE_all.rdata"))
-
-
-
+     datTrans_reg_batch,
+     datTransRaw, 
+     file = paste0(outputFolder,'input_for_DE_transc.rdata'))
 
 #proc.time() - time0
 
