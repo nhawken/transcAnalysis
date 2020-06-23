@@ -23,7 +23,7 @@ library(patchwork)
 library(sva) #missing OG code, had to install via BiocManager
 
 outputfile_counter = 1
-outputFolder = paste(getwd(), '/process_OUT_20200622/', sep = "") # SET AN OUTPUT PATH HERE
+outputFolder = paste(getwd(), '/process_OUT_20200623/', sep = "") # SET AN OUTPUT PATH HERE
 dir.create(outputFolder, showWarnings = F, recursive = T)
 #time0 <- proc.time()
 
@@ -705,6 +705,7 @@ dev.off()
 
 save(datMeta,
      datTrans_reg_batch,
+     datTrans.htg,
      datTransRaw, 
      file = paste0(outputFolder,'input_for_DE_transc.rdata'))
 
