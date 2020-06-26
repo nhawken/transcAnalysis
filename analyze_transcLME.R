@@ -1,4 +1,4 @@
-setwd("~/Aaron/Projects/CIRM/")
+setwd("C:/Users/natha/Documents/Geschwind Rotation 2020/transcAnalysis/")
 options(stringsAsFactors = FALSE)
 
 library(tidyverse)
@@ -15,74 +15,84 @@ library(ggraph)
 
 
 file_index <- 1
-parent_folder  <-  "analysis/rsem/3_Dx/1.2_all_batches_seqPCS_dropQC_source/"
-output_folder  <-  file.path(parent_folder, "LME","dx_day")
+parent_folder  <-  getwd()
+# # output_folder  <-  file.path(parent_folder, "LME","dx_day")
+output_folder = paste(getwd(), '/analyze_transcLME_OUT_',Sys.Date(),'/', sep = "") # SET AN OUTPUT PATH HERE
+dir.create(output_folder, showWarnings = F, recursive = T)
+#time0 <- proc.time()
 
 theme_set(theme_classic(base_size = 18))
 
-load("data/gene_annotation.Rdata")
-load(file.path(parent_folder,"input_for_DE_all.rdata"))
+load("all_transcript_data.Rdata")
+load(file.path(parent_folder,"input_for_DE_transc.rdata"))
 
 cond <- "dx_day"
 
 # source("~/Aaron/Scripts/Aaron/CIRM/3_Diagnosis/DE_functions.R")
 
 # read in DE results
-de_results <- read_csv(paste0(output_folder, "/",cond, "_lme_DE.csv"))[,-2] %>% 
-  rename("ensembl_gene_id" = "X1") %>% 
-  setNames(gsub("Idiopathic(.?ASD)?","IdiopathicASD", colnames(.)))
+de_results <- read_csv(paste0(parent_folder, "/",cond, "_lme_DE.csv"))[,-2] %>% #calls all but the 2nd col of the matrix
+  rename("ensembl_transcript_id" = "X1") %>%  #renames unlabeled column
+  setNames(gsub("Idiopathic(.?ASD)?","IdiopathicASD", colnames(.))) #rename idiopathic ASD columns 
 
 
 
-dxs <- gsub(".*\\.(.*?)_.*","\\1", colnames(de_results)) %>% 
+dxs <- gsub(".*\\.(.*?)_.*","\\1", colnames(de_results)) %>% #gsub one or more of any charater followed by a period, (.*?) is the capture group
+  unique() %>%  #gets rid of Beta/p/SE. in front, keeps the next dx, gets rid of the _025/50/late afterwards
+  sort() %>%
+  .[. != "ensembl_transcript_id"] 
+
+stages <- gsub(".*\\..*?_(.*)","\\1", colnames(de_results)) %>% #get rid of Beta/p/Se. in front then gets rid of Dx_, capture anything after Dx
   unique() %>% 
   sort() %>%
-  .[. != "ensembl_gene_id"] 
+  .[. != "ensembl_transcript_id"] 
 
-stages <- gsub(".*\\..*?_(.*)","\\1", colnames(de_results)) %>% 
+dx_stage <- gsub(".*\\.(.*?_.*)","\\1", colnames(de_results)) %>%  #get rid of Beta/p/SE., then capture dx and stages
   unique() %>% 
   sort() %>%
-  .[. != "ensembl_gene_id"] 
-
-dx_stage <- gsub(".*\\.(.*?_.*)","\\1", colnames(de_results)) %>% 
-  unique() %>% 
-  sort() %>%
-  .[. != "ensembl_gene_id"] 
+  .[. != "ensembl_transcript_id"] 
 
 
 # # correct p value and add annotation
-de_results_adj <- lapply(dx_stage, function(dx_stg){
+de_results_adj <- lapply(dx_stage, function(dx_stg){ #for each dx_stage, create a list with 1 data frame (tibble) containing beta, SE, p, fdr
   p_val_col <- paste0("p.",dx_stg)
   de_results %>% 
     dplyr::select(contains(dx_stg)) %>% 
-    mutate(fdr =   !!as.name(p_val_col) %>% p.adjust(., method = "fdr")) %>% 
+    mutate(fdr =   !!as.name(p_val_col) %>% p.adjust(., method = "fdr")) %>% #control the false discovery rate, the expected proportion of false discoveries amongst the rejected hypotheses
+    # mutate(data fram, new_var = [existing var])
     rename_at(vars(matches("fdr")), list(~paste0("fdr.",dx_stg)))
-}) %>% bind_cols() %>% 
-  mutate(ensembl_gene_id = de_results$ensembl_gene_id) %>% 
-  dplyr::select(ensembl_gene_id, everything())
+}) %>% bind_cols() %>%  #combines dataframes, list of dataframs
+  mutate(ensembl_transcript_id = de_results$ensembl_transcript_id) %>% #add new column to df with the ensembl tanscript ids
+  dplyr::select(ensembl_transcript_id, everything()) #puts all other columns after the ID column
 
-# seperate dx_day into seperate dfs
+
+
+transAnno <-  transcriptAnnoRaw %>%
+  filter(ensembl_transcript_id %in% rownames(datTrans_reg_batch)) %>%
+  filter(!duplicated(ensembl_transcript_id))
+
+# separate dx_day into seperate dfs
 de_dx_day <- lapply(dx_stage, function(dx_stg){
   de_results_adj %>% 
-    dplyr::select(ensembl_gene_id,contains(dx_stg))  %>% 
-    setNames(gsub(paste0("\\.",dx_stg), "", colnames(.))) %>% 
-    left_join(geneAnno, by = "ensembl_gene_id") 
-})  %>% setNames(dx_stage)
+    dplyr::select(ensembl_transcript_id,contains(dx_stg))  %>% #keep only the variables ID, and dx_stage of interest (beta, se, p, fdr)
+    setNames(gsub(paste0("\\.",dx_stg), "", colnames(.))) %>% #remove .dx_stage identifier from the columns of beta, se, p, fdr
+    left_join(transAnno, by = "ensembl_transcript_id") #add transcript annotation table to the right edge of the table
+})  %>% setNames(dx_stage) #rename overall df to be the dx_stage identifier
 
 
 # Plot number of DEG -------------------------------------------------------------
 deg_n <- lapply(dx_stage, function(dx_stg){
-  res <- de_dx_day[[dx_stg]]
-  stage = gsub(".*?_(.*)","\\1", dx_stg)
-  dx = gsub("(.*?)_.*","\\1", dx_stg)
+  res <- de_dx_day[[dx_stg]] #call df with specific dx_stage id
+  stage = gsub(".*?_(.*)","\\1", dx_stg) #pull out stage from id
+  dx = gsub("(.*?)_.*","\\1", dx_stg) #pull out dx from id
   
   sigRes1 <- res %>% 
-    filter(p < 0.005)
-  sigGenSum1 <- c(stage,dx, paste("p =",0.005),sum(sigRes1$beta > 0),sum(sigRes1$beta < 0))
+    filter(p < 0.005) #grab only p vals less than 0.005
+  sigGenSum1 <- c(stage,dx, paste("p =",0.005),sum(sigRes1$beta > 0),sum(sigRes1$beta < 0)) #number of downreg and upreg values
   
   sigRes2 <- res %>% 
-    filter(fdr < 0.05)
-  sigGenSum2 <- c(stage,dx, "FDR = 0.05",sum(sigRes2$beta > 0),sum(sigRes2$beta < 0))
+    filter(fdr < 0.05) #grab only fdr vals less than 0.05
+  sigGenSum2 <- c(stage,dx, "FDR = 0.05",sum(sigRes2$beta > 0),sum(sigRes2$beta < 0)) #number of downreg and upreg values
   
   sigGenSum <- rbind(sigGenSum1,sigGenSum2) %>% 
     as.data.frame()
