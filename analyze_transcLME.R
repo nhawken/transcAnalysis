@@ -127,16 +127,17 @@ deg_n_plots <- lapply(unique(deg_n$pvalue), function(p){
   #         axis.line = element_blank(),
   #         axis.text.y = element_text(face = "bold"),
   #         axis.title = element_blank(),
-  #         strip.text = element_text(size = 12, face = "bold"), 
+  #         strip.text = element_text(size = 12, face = "bold"),
   #         strip.background = element_rect(fill = "grey90", color = "white"),
-  #         panel.grid.major.y = element_blank(), 
+  #         panel.grid.major.y = element_blank(),
   #         strip.text.y = element_blank()) +
   #   coord_flip() +
   #   geom_text(data = plot_dat[plot_dat$variable == "upRegulated",],aes(label = value),hjust = -0.1, size = 3) +
-  #   geom_text(data = plot_dat[plot_dat$variable == "downRegulated",],aes(label = abs(value)),hjust = 1.1, size = 3) 
+  #   geom_text(data = plot_dat[plot_dat$variable == "downRegulated",],aes(label = abs(value)),hjust = 1.1, size = 3)
   p1 <- ggplot(plot_dat, aes(x = stg_n, y = value, fill = variable)) +
     geom_col(position = "identity") +
     facet_wrap(~Dx)+
+    coord_flip() +    
     scale_fill_manual(values = c("#77dd77", "#ff7878")) +
     geom_hline(yintercept = 0, size = 1) +
     scale_y_continuous(breaks = NULL,name = "",limits = limits) +
@@ -147,14 +148,14 @@ deg_n_plots <- lapply(unique(deg_n$pvalue), function(p){
           axis.line = element_blank(),
           axis.text.y = element_text(face = "bold"),
           axis.title = element_blank(),
-          strip.text = element_text(size = 12, face = "bold"), 
+          strip.text = element_text(size = 12, face = "bold"),
           strip.background = element_rect(fill = "grey90", color = "white"),
-          panel.grid.major = element_blank(), 
+          panel.grid.major = element_blank(),
           strip.text.y = element_blank()) +
-    coord_flip() +
+
     geom_text(data = plot_dat[plot_dat$variable == "upRegulated",],aes(label = value),hjust = -0.1, size = 3) +
-    geom_text(data = plot_dat[plot_dat$variable == "downRegulated",],aes(label = abs(value)),hjust = 1.1, size = 3) 
-  
+    geom_text(data = plot_dat[plot_dat$variable == "downRegulated",],aes(label = abs(value)),hjust = 1.1, size = 3)
+
   print(p1)
 })
 
@@ -162,10 +163,10 @@ dev.off()
 
 # plot P value histograms
 melted_p_values <- de_results_adj %>% 
-  select(ensembl_gene_id, starts_with("p.")) %>% 
+  select(ensembl_transcript_id, starts_with("p.")) %>% 
   gather("dx_day","pvalue", starts_with("p.")) %>%
-  mutate(Dx = gsub("p.(.*?)_(.*)","\\1", dx_day), 
-         Stage = gsub("p.(.*?)_(.*)","\\2", dx_day))
+  mutate(Dx = gsub("p.(.*?)_(.*)","\\1", dx_day), #grabs dx only
+         Stage = gsub("p.(.*?)_(.*)","\\2", dx_day)) #grabs stage only
 
 pdf(file = paste0(output_folder, "/", file_index, ".1_LME_pvalues_histogram.pdf"), height = 7, width = 12)
 ggplot(melted_p_values, aes(x = pvalue)) +
@@ -174,11 +175,15 @@ ggplot(melted_p_values, aes(x = pvalue)) +
   theme_classic(base_size = 10) +
   theme(strip.text = element_text(size = 12)) +
   theme(axis.text.x = element_text(angle = -90, hjust  = 0, vjust = 0.5))
+
 dev.off()
 
 file_index = file_index + 1
 
 # plot logFC around the CNV locus ---------------------------------------------------------------------------------
+isoID <- data.frame(paste(transAnno$hgnc_symbol, str_sub(transAnno$ensembl_transcript_id, -6, -1), sep = "_"))
+transAnno_id <- cbind(transAnno, isoID)
+
 loci <- list("15q13" = list("chr" = "15",
                             "surround" = c(28*10^6, 33*10^6),
                             "cnv" = c(30.61*10^6, 32.0*10^6)),
@@ -216,7 +221,7 @@ get_cnv_logFC <- function(deg,chr, plot_region, mut, type, stage){
       filter(chromosome_name == chr & start_position >  plot_region[[1]] & end_position < plot_region[[2]]) %>% 
       mutate(inCNV = ifelse(end_position > mut[[1]] & start_position < mut[[2]],T,F),
              significant = ifelse(p < 0.005,T,F), 
-             hgnc_symbol = ifelse(hgnc_symbol == "", ensembl_gene_id, hgnc_symbol)) %>% 
+             hgnc_symbol = ifelse(hgnc_symbol == "", ensembl_transcript_id, hgnc_symbol)) %>% 
       arrange(start_position) %>% 
       mutate(hgnc_symbol = factor(hgnc_symbol, levels = hgnc_symbol))
     
@@ -234,14 +239,15 @@ get_cnv_logFC <- function(deg,chr, plot_region, mut, type, stage){
   dat_plot
 }
 
-defined_forms <-  grep(paste(names(loci),collapse = "|"), dx_stage, value = T) # only run this on dx found in the loci list
+defined_forms <-  grep(paste(names(loci),collapse = "|"), dx_stage[1], value = T) # only run this on dx found in the loci list
 cnv_logfc_plots <- lapply(defined_forms,function(dx_stg){
   dx <- gsub("(.*?)_.*","\\1",dx_stg)
   stage <- gsub(".*?_(.*)","\\1",dx_stg)
   type <- names(loci[[dx]])[3]
+  browser()
   de_results_adj %>%
-    left_join(geneAnno, by = "ensembl_gene_id") %>% 
-    select(contains(dx_stg), colnames(geneAnno))  %>% 
+    left_join(transAnno, by = "ensembl_transcript_id") %>% 
+    select(contains(dx_stg), colnames(transAnno))  %>% 
     setNames(gsub(paste0("\\.",dx_stg), "", colnames(.))) %>% 
     get_cnv_logFC(loci[[dx]][["chr"]], loci[[dx]][["surround"]], loci[[dx]][[3]],type, stage) %>%
     mutate(dx_day = dx_stg, 
