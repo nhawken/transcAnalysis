@@ -116,6 +116,7 @@ deg_n_plots <- lapply(unique(deg_n$pvalue), function(p){
                              stg_n %in% c(3:6) ~ stg_n + 0.5
     ))
   limits <- range(deg_n$value) + c(-1,1) * 220
+  browser()
   # p1 <- ggplot(plot_dat, aes(x = Dx, y = value, fill = variable)) +
   #   geom_bar(stat = "identity", position = "identity") +
   #   facet_grid(Dx ~ stage, scales = "free") +
@@ -137,11 +138,11 @@ deg_n_plots <- lapply(unique(deg_n$pvalue), function(p){
   p1 <- ggplot(plot_dat, aes(x = stg_n, y = value, fill = variable)) +
     geom_col(position = "identity") +
     facet_wrap(~Dx)+
-    coord_flip() +    
     scale_fill_manual(values = c("#77dd77", "#ff7878")) +
     geom_hline(yintercept = 0, size = 1) +
     scale_y_continuous(breaks = NULL,name = "",limits = limits) +
     scale_x_continuous(breaks=sort(unique(plot_dat$stg_n)), labels  = rev(c("025", "050", "075", "100","late_stage", "all_timepoints"))) +
+    coord_flip() +   
     theme_minimal() +
     theme(legend.position = "none",
           panel.grid = element_blank(),
@@ -181,8 +182,8 @@ dev.off()
 file_index = file_index + 1
 
 # plot logFC around the CNV locus ---------------------------------------------------------------------------------
-isoID <- data.frame(paste(transAnno$hgnc_symbol, str_sub(transAnno$ensembl_transcript_id, -6, -1), sep = "_"))
-transAnno_id <- cbind(transAnno, isoID)
+isoID <- paste(transAnno$hgnc_symbol, str_sub(transAnno$ensembl_transcript_id, -6, -1), sep = "_")
+transAnno_id <- mutate(transAnno, hgnc_iso_symbol = isoID)
 
 loci <- list("15q13" = list("chr" = "15",
                             "surround" = c(28*10^6, 33*10^6),
@@ -221,33 +222,37 @@ get_cnv_logFC <- function(deg,chr, plot_region, mut, type, stage){
       filter(chromosome_name == chr & start_position >  plot_region[[1]] & end_position < plot_region[[2]]) %>% 
       mutate(inCNV = ifelse(end_position > mut[[1]] & start_position < mut[[2]],T,F),
              significant = ifelse(p < 0.005,T,F), 
-             hgnc_symbol = ifelse(hgnc_symbol == "", ensembl_transcript_id, hgnc_symbol)) %>% 
+             hgnc_iso_symbol = ifelse(hgnc_iso_symbol == "", ensembl_transcript_id, hgnc_iso_symbol)) %>% 
       arrange(start_position) %>% 
-      mutate(hgnc_symbol = factor(hgnc_symbol, levels = hgnc_symbol))
+      mutate(hgnc_iso_symbol = factor(hgnc_iso_symbol, levels = hgnc_iso_symbol))
     
   } else if (type == "gene"){
     dat_plot <- deg %>%
       filter(chromosome_name == chr & start_position >  plot_region[[1]] & end_position < plot_region[[2]]) %>% 
       mutate(inCNV = ifelse(hgnc_symbol == mut,T,F),
              significant = ifelse(p < 0.005,T,F), 
-             hgnc_symbol = ifelse(hgnc_symbol == "", ensembl_gene_id, hgnc_symbol)) %>% 
+             hgnc_iso_symbol = ifelse(hgnc_iso_symbol == "", ensembl_transcript_id, hgnc_iso_symbol)) %>% 
       arrange(start_position) %>% 
-      mutate(hgnc_symbol = factor(hgnc_symbol, levels = hgnc_symbol))  
+      mutate(hgnc_iso_symbol = factor(hgnc_iso_symbol, levels = hgnc_iso_symbol))  
   } else {
     stop('type must be one of "cnv"/"gene"')
   }
   dat_plot
 }
 
-defined_forms <-  grep(paste(names(loci),collapse = "|"), dx_stage[1], value = T) # only run this on dx found in the loci list
+
+dx_stage_loci <- dx_stage[!grepl(".*Idiopathic.*", dx_stage )]
+
+
+
+defined_forms <-  grep(paste(names(loci),collapse = "|"), dx_stage_loci, value = T) # only run this on dx found in the loci list
 cnv_logfc_plots <- lapply(defined_forms,function(dx_stg){
   dx <- gsub("(.*?)_.*","\\1",dx_stg)
   stage <- gsub(".*?_(.*)","\\1",dx_stg)
   type <- names(loci[[dx]])[3]
-  browser()
   de_results_adj %>%
-    left_join(transAnno, by = "ensembl_transcript_id") %>% 
-    select(contains(dx_stg), colnames(transAnno))  %>% 
+    left_join(transAnno_id, by = "ensembl_transcript_id") %>% 
+    select(contains(dx_stg), colnames(transAnno_id))  %>% 
     setNames(gsub(paste0("\\.",dx_stg), "", colnames(.))) %>% 
     get_cnv_logFC(loci[[dx]][["chr"]], loci[[dx]][["surround"]], loci[[dx]][[3]],type, stage) %>%
     mutate(dx_day = dx_stg, 
@@ -255,8 +260,7 @@ cnv_logfc_plots <- lapply(defined_forms,function(dx_stg){
            stage = stage) %>% 
     ggplot() +
     geom_hline(yintercept = 0, color = "red") +
-    geom_pointrange(aes(x = hgnc_symbol, y = beta, ymin = beta-SE , ymax = beta+SE, shape = significant, color = inCNV)) +
-    
+    geom_pointrange(aes(x = hgnc_iso_symbol, y = beta, ymin = beta-SE , ymax = beta+SE, shape = significant, color = inCNV)) +
     theme_classic(base_size = 12) +
     scale_shape_manual(values = c(1, 8)) +
     scale_color_manual(values = c("grey40", "royalblue")) +
@@ -293,8 +297,8 @@ file_index <- file_index + 1
 # manhatan plot of DEGs ---------------------------------------------------------------------------------------
 dat_manhattan <- lapply(dx_stage, function(dx_stg){
   de_results_adj %>% 
-    dplyr::select(ensembl_gene_id, contains(dx_stg))  %>% 
-    left_join(geneAnno, by = "ensembl_gene_id") %>% 
+    dplyr::select(ensembl_transcript_id, contains(dx_stg))  %>% 
+    left_join(transAnno_id, by = "ensembl_transcript_id") %>% 
     setNames(gsub(paste0("\\.",dx_stg), "", colnames(.)))
   
 })  %>% setNames(dx_stage)
@@ -319,52 +323,82 @@ file_index <- file_index + 1
 # library(clusterProfiler)
 dat_clusterProfiler <- de_dx_day 
 # save and move to hoffman for analysis
-save(dat_clusterProfiler,  file = paste0(output_folder,"/clusterProfiler_input.rdata"))
-hoffman_folder <- file.path("/u/project/geschwind/aarong/CIRM_iPSC/analysis/rsem/3_Dx/", basename(parent_folder), "LME/dx_day/clusterProfiler" )
+#save(dat_clusterProfiler,  file = paste0(output_folder,"/clusterProfiler_input.rdata"))
+#hoffman_folder <- file.path("/u/project/geschwind/aarong/CIRM_iPSC/analysis/rsem/3_Dx/", basename(parent_folder), "LME/dx_day/clusterProfiler" )
 
-system(paste("ssh aarong@hoffman2.idre.ucla.edu mkdir", hoffman_folder))
+#system(paste("ssh aarong@hoffman2.idre.ucla.edu mkdir", hoffman_folder))
 
-system(paste("scp",file.path(getwd(),output_folder, "clusterProfiler_input.rdata"),  paste0("aarong@hoffman2.idre.ucla.edu:",hoffman_folder)))
+#system(paste("scp",file.path(getwd(),output_folder, "clusterProfiler_input.rdata"),  paste0("aarong@hoffman2.idre.ucla.edu:",hoffman_folder)))
 
 # Run clusterProfiler on server ---
+# on personal computer, need to increase memory.limit()
 # code here for reference: 
-# go_results <- lapply(names(de_dx_day), function(dx_day){
-#   go_enrich <- lapply(c("BP","MF"), function(ontology){
-#     deg <- de_dx_day[[dx_day]]
-#     go_enrich_raw <- deg %>%
-#       dplyr::filter(p < 0.005) %>%
-#       dplyr::select(ensembl_gene_id) %>%
-#       unlist() %>%
-#       enrichGO(OrgDb = "org.Hs.eg.db",
-#                universe = deg$ensembl_gene_id,
-#                keyType = "ENSEMBL",
-#                ont = ontology,
-#                readable = T, pvalueCutoff = 1, qvalueCutoff = 1) %>%
-#       .@result %>%
-#       mutate(Ontology  = ontology)
-#   }) %>%
-#     do.call(rbind,.) %>%
-#     arrange(pvalue)
-# })
-# save(go_results, file = file.path(parent_folder,"clusterProfiler_results.rdata"))
+library(clusterProfiler)
+library(org.Hs.eg.db)
+
+go_results <- lapply(names(de_dx_day), function(dx_day){
+  go_enrich <- lapply(c("BP","MF"), function(ontology){
+    print(dx_day)
+    deg <- de_dx_day[[dx_day]]
+    go_enrich_raw <- deg %>%
+      dplyr::filter(p < 0.005) %>%
+      dplyr::select(ensembl_transcript_id) %>%
+      unlist() %>%
+      enrichGO(OrgDb = "org.Hs.eg.db",
+               universe = deg$ensembl_transcript_id,
+               keyType = "ENSEMBLTRANS", #changed from "ENSEMBL"
+               ont = ontology,
+               readable = T, pvalueCutoff = 1, qvalueCutoff = 1) %>%
+      .@result %>%
+      mutate(Ontology  = ontology)
+  }) %>%
+    do.call(rbind,.) %>%
+    arrange(pvalue)
+})
+save(go_results, file = file.path(parent_folder,"clusterProfiler_results2.rdata"))
+
+
+# Determine whether GO cluster is UP or DOWN regulated
+names(go_results) <- dx_stage
+
+go_reg <- lapply(dx_stage, function(dx_s){
+  go_dx <- go_results[[dx_s]] %>%
+    mutate(sep_hgnc = str_split(geneID, "/"))
+  go_ensem <- lapply(go_dx$sep_hgnc, function(hgnc_list){
+    output <- vector(mode = "list", length = length(hgnc_list))
+    for (idx in 1:length(hgnc_list)){
+      anno_list <- dplyr::filter(transAnno_id, hgnc_symbol == hgnc_list[idx])
+      output[[idx]] <- anno_list$ensembl_transcript_id      
+    }
+  unlist(output)
+  })
+  mutate(go_dx, ensemblList = go_ensem)
+})
+
+names(go_reg) <- dx_stage
+
+
 
 # Analyze cluster profiler results --------------------------------------------------------------------------------
 load(file.path(output_folder,"clusterProfiler_results_up_down.rdata"))
+
+names(go_results) <- dx_stage
+
 go_plots <- lapply(dxs, function(dx){
   idx <- grep(dx, names(go_results), value = T)
   dx_plots <- lapply(idx, function(dx_day){
-    p1 <- go_results[[dx_day]] %>% 
+    p1 <- go_results[[dx_day]] %>%
       mutate(log10.p.value = -log10(pvalue), 
              go_size = as.numeric(gsub("/.*","",BgRatio))) %>% 
       filter(pvalue < 0.05 & go_size > 50 & Count > 3) %>% 
-      group_by(Direction) %>% 
+      # group_by(Direction) %>% 
       arrange(pvalue) %>% 
-      dplyr::slice(1:3) %>% 
+      dplyr::slice(1:6) %>% 
       arrange(desc(pvalue), .by_group = T) %>% 
       ungroup() %>% 
       mutate(Description = fct_inorder(Description)) %>% 
       ggplot(aes(x = Description , y =  abs(log10.p.value))) +
-      geom_col(aes(fill = Direction), position = "dodge") +
+      geom_col(aes(fill = Ontology), position = "dodge") +
       labs(y = "-log10(p value)", x = "") +
       theme(axis.text.y = element_text(hjust = 1, vjust  = 0.3)) +
       scale_x_discrete(labels = function(x) str_wrap(x, width = 40)) +
@@ -389,6 +423,7 @@ lapply(dxs, function(dx){
   eval(parse(text = plot_command))
 })
 dev.off()  
+file_index <- file_index + 1
 
 pdf(paste0( output_folder,"/", file_index, "_clusterProfilers_results_allTPs.pdf"), width = 13.5, height = 7.5)
 all_tps_plots <- lapply(go_plots, function(l1){
@@ -552,7 +587,7 @@ dx_logFC_cor <- lapply(dxs, function(dx){
   
   betas <- lapply(names(de_dx_day[idx]), function(dx_day){
     deg <- de_dx_day[[dx_day]][]
-    deg <- deg[order(deg$ensembl_gene_id),c("beta")] %>% 
+    deg <- deg[order(deg$ensembl_transcript_id),c("beta")] %>% 
       setNames(dx_day)
   })  %>% do.call(cbind,.)
   cormat <- cor(betas, use = "pairwise", method = "spearman")
@@ -591,6 +626,8 @@ ggplot(dx_logFC_cor, aes(var2, var1, fill = cor)) +
   facet_wrap(~dx, nrow = 2)
 
 dev.off()
+file_index <- file_index + 1
+
 
 pdf(paste0(output_folder,"/", file_index, "_logFC_cor_within_Dx_network.pdf"), height = 7, width = 12)
 dx_logFC_cor %>% 
@@ -604,6 +641,7 @@ dx_logFC_cor %>%
   theme_graph(base_family = "") +
   facet_wrap(~dx)
 dev.off()
+file_index <- file_index + 1
 
 
 # Correlation of logFC between Dx ---------------------------------------------------------------------------------
@@ -611,7 +649,7 @@ stage_logFC_cor <- lapply(stages, function(stg) {
   idx <- grep(stg, names(de_dx_day), value = T)
   betas <- lapply(names(de_dx_day[idx]), function(dx_day){
     deg <- de_dx_day[[dx_day]][]
-    deg <- deg[order(deg$ensembl_gene_id),c("beta")] %>% 
+    deg <- deg[order(deg$ensembl_transcript_id),c("beta")] %>% 
       setNames(gsub("_.*","", dx_day))
   })  %>% do.call(cbind,.) 
   cormat <- cor(betas, use = "pairwise", method = "spearman")
@@ -630,7 +668,7 @@ logfc_heatmaps <- lapply(stages, function(stg) {
 png(paste0(output_folder,"/", file_index, "_logFC_cor_between_Dx.png"), height = 8, width = 16, units = "in", res = 300)
 do.call(grid.arrange, c(logfc_heatmaps, nrow = 2))
 dev.off()
-
+file_index <- file_index +1
 #plot networks
 stage_logFC_cor_tidy <- lapply(stages, function(stg){
   cormat <- stage_logFC_cor[[stg]]
@@ -657,12 +695,13 @@ stage_logFC_cor_tidy %>%
   theme_graph(base_family = "") +
   facet_wrap(~stage)
 dev.off()
+file_index <- file_index + 1
 
 # plot all timepoints/Dxs -----------------------------------------
 
 betas <- lapply(names(de_dx_day), function(dx_day){
   deg <- de_dx_day[[dx_day]][]
-  deg <- deg[order(deg$ensembl_gene_id),c("beta")] %>% 
+  deg <- deg[order(deg$ensembl_transcript_id),c("beta")] %>% 
     setNames(dx_day)
 })  %>% 
   do.call(cbind,.) %>% 
@@ -740,7 +779,7 @@ file_index = file_index + 1
 all_degs <- lapply(de_dx_day, function(x){
   x %>% 
     filter(p < 0.005) %>% 
-    select(ensembl_gene_id) %>% 
+    select(ensembl_transcript_id) %>% 
     unlist()
 })
 
