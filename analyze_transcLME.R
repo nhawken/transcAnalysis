@@ -185,6 +185,12 @@ file_index = file_index + 1
 isoID <- paste(transAnno$hgnc_symbol, str_sub(transAnno$ensembl_transcript_id, -6, -1), sep = "_")
 transAnno_id <- mutate(transAnno, hgnc_iso_symbol = isoID)
 
+for (iso in 1:length(transAnno_id$ensembl_transcript_id)) {
+  if (transAnno_id$hgnc_symbol[iso] == '') {
+    transAnno_id$hgnc_symbol[iso] <- "N/A"
+  }
+}
+
 loci <- list("15q13" = list("chr" = "15",
                             "surround" = c(28*10^6, 33*10^6),
                             "cnv" = c(30.61*10^6, 32.0*10^6)),
@@ -260,10 +266,12 @@ cnv_logfc_plots <- lapply(defined_forms,function(dx_stg){
            stage = stage) %>% 
     ggplot() +
     geom_hline(yintercept = 0, color = "red") +
-    geom_pointrange(aes(x = hgnc_iso_symbol, y = beta, ymin = beta-SE , ymax = beta+SE, shape = significant, color = inCNV)) +
+    geom_pointrange(aes(x = hgnc_symbol, y = beta, ymin = beta-SE , ymax = beta+SE, shape = significant, color = inCNV), position = position_dodge2(width = 1, preserve = "single", padding = 0.8))  +
     theme_classic(base_size = 12) +
     scale_shape_manual(values = c(1, 8)) +
     scale_color_manual(values = c("grey40", "royalblue")) +
+    #facet_wrap(~hgnc_symbol, strip.position = 'bottom', scales = "free_x" ) +   
+    #geom_text(position, aes(x=hgnc_symbol, y=0, label = hgnc_symbol)) +
     theme(axis.text.x = element_text(angle = -90, hjust = 0, vjust = 0.5)) +
     labs(x = "")  +
     ggtitle(dx_stg)
@@ -355,7 +363,146 @@ go_results <- lapply(names(de_dx_day), function(dx_day){
     do.call(rbind,.) %>%
     arrange(pvalue)
 })
-save(go_results, file = file.path(parent_folder,"clusterProfiler_results2.rdata"))
+save(goresultsup_all, file = file.path(parent_folder,"clusterProfiler_results2.rdata"))
+
+
+# Aaron's code for up vs down -------------------------------
+
+
+
+go_results_updown44 <- lapply(names(dat_clusterProfiler[44]), function(dx_day){
+  print(dx_day)
+lapply(c("up_regulated", "down_regulated"),function(direction){
+  print(direction)
+  if (direction == "up_regulated") {
+    go_enrich <- lapply("BP", function(ontology){
+      print(ontology)
+      deg <- dat_clusterProfiler[[dx_day]]
+      go_enrich_raw <- deg %>%
+        dplyr::filter(p < 0.005) 
+      if(direction == "up_regulated") {
+        go_enrich_raw <- go_enrich_raw %>% 
+          filter(beta > 0) %>%
+          distinct(ensembl_gene_id, .keep_all = TRUE)
+      } else if (direction == "down_regulated"){
+        go_enrich_raw <- go_enrich_raw %>% 
+          filter(beta < 0) %>%
+          distinct(ensembl_gene_id, .keep_all = TRUE)
+      } else {
+        print("crash and burn!!")
+      }
+      go_enrich_raw <- go_enrich_raw %>%
+        dplyr::select(ensembl_transcript_id) %>%
+        unlist() %>%
+        enrichGO(OrgDb = "org.Hs.eg.db",
+                 universe = deg$ensembl_transcript_id,
+                 keyType = "ENSEMBLTRANS",
+                 ont = ontology,
+                 readable = T, pvalueCutoff = 1, qvalueCutoff = 1) %>%
+        .@result %>%
+        mutate(Ontology  = ontology,
+               Direction = direction)
+    }) %>%
+      bind_rows()
+  } else if (direction == "down_regulated"){
+    go_enrich <- lapply(c("BP","MF"), function(ontology){
+      print(ontology)
+      deg <- dat_clusterProfiler[[dx_day]]
+      go_enrich_raw <- deg %>%
+        dplyr::filter(p < 0.005) 
+      if(direction == "up_regulated") {
+        go_enrich_raw <- go_enrich_raw %>% 
+          filter(beta > 0) %>%
+          distinct(ensembl_gene_id, .keep_all = TRUE)
+      } else if (direction == "down_regulated"){
+        go_enrich_raw <- go_enrich_raw %>% 
+          filter(beta < 0) %>%
+          distinct(ensembl_gene_id, .keep_all = TRUE)
+      } else {
+        print("crash and burn!!")
+      }
+      go_enrich_raw <- go_enrich_raw %>%
+        dplyr::select(ensembl_transcript_id) %>%
+        unlist() %>%
+        enrichGO(OrgDb = "org.Hs.eg.db",
+                 universe = deg$ensembl_transcript_id,
+                 keyType = "ENSEMBLTRANS",
+                 ont = ontology,
+                 readable = T, pvalueCutoff = 1, qvalueCutoff = 1) %>%
+        .@result %>%
+        mutate(Ontology  = ontology,
+               Direction = direction)
+    }) %>%
+      bind_rows()
+  } 
+}) %>%
+  bind_rows() %>%
+  arrange(pvalue)
+}) %>%
+  setNames(names(dat_clusterProfiler[44]))
+
+
+
+go_results_updown2 <- lapply(names(dat_clusterProfiler[45:54]), function(dx_day){
+  print(dx_day)
+  lapply(c("up_regulated", "down_regulated"),function(direction){
+    go_enrich <- lapply(c("BP","MF"), function(ontology){
+      deg <- dat_clusterProfiler[[dx_day]]
+      go_enrich_raw <- deg %>%
+        dplyr::filter(p < 0.005) 
+      if(direction == "up_regulated") {
+        go_enrich_raw <- go_enrich_raw %>% 
+          filter(beta > 0) %>%
+          distinct(ensembl_gene_id, .keep_all = TRUE)
+      } else if (direction == "down_regulated"){
+        go_enrich_raw <- go_enrich_raw %>% 
+          filter(beta < 0) %>%
+          distinct(ensembl_gene_id, .keep_all = TRUE)
+      } else {
+        print("crash and burn!!")
+      }
+      go_enrich_raw <- go_enrich_raw %>%
+        dplyr::select(ensembl_transcript_id) %>%
+        unlist() %>%
+        enrichGO(OrgDb = "org.Hs.eg.db",
+                 universe = deg$ensembl_transcript_id,
+                 keyType = "ENSEMBLTRANS",
+                 ont = ontology,
+                 readable = T, pvalueCutoff = 1, qvalueCutoff = 1) %>%
+        .@result %>%
+        mutate(Ontology  = ontology,
+               Direction = direction)
+    }) %>%
+      bind_rows()
+  }) %>%
+    bind_rows() %>%
+    arrange(pvalue)
+}) %>%
+  setNames(names(dat_clusterProfiler[45:54]))
+
+go_results_updown <- lapply(names(dat_clusterProfiler), function(dx_day){
+  print(dx_day)
+  lapply(c("up_regulated", "down_regulated"),function(direction){
+    go_enrich <- lapply(c("BP","MF"), function(ontology){
+      deg <- dat_clusterProfiler[[dx_day]]
+      go_enrich_raw <- deg %>%
+        dplyr::filter(p < 0.005) 
+      if(direction == "up_regulated") {
+        go_enrich_raw <- go_enrich_raw %>% 
+          filter(beta > 0) %>%
+          distinct(ensembl_gene_id, .keep_all = TRUE)
+        print(dim(go_enrich_raw)[1])
+      } else if (direction == "down_regulated"){
+        go_enrich_raw <- go_enrich_raw %>% 
+          filter(beta < 0) %>%
+          distinct(ensembl_gene_id, .keep_all = TRUE)
+        print(dim(go_enrich_raw)[1])
+      } else {
+        print("crash and burn!!")
+      }
+    })
+  })
+})
 
 
 # Determine whether GO cluster is UP or DOWN regulated
@@ -387,18 +534,18 @@ names(go_results) <- dx_stage
 go_plots <- lapply(dxs, function(dx){
   idx <- grep(dx, names(go_results), value = T)
   dx_plots <- lapply(idx, function(dx_day){
-    p1 <- go_results[[dx_day]] %>%
+    p1 <- goresultsup_all[[dx_day]] %>%
       mutate(log10.p.value = -log10(pvalue), 
              go_size = as.numeric(gsub("/.*","",BgRatio))) %>% 
       filter(pvalue < 0.05 & go_size > 50 & Count > 3) %>% 
-      # group_by(Direction) %>% 
+      group_by(Direction) %>% 
       arrange(pvalue) %>% 
       dplyr::slice(1:6) %>% 
       arrange(desc(pvalue), .by_group = T) %>% 
       ungroup() %>% 
       mutate(Description = fct_inorder(Description)) %>% 
       ggplot(aes(x = Description , y =  abs(log10.p.value))) +
-      geom_col(aes(fill = Ontology), position = "dodge") +
+      geom_col(aes(fill = Direction), position = "dodge") +
       labs(y = "-log10(p value)", x = "") +
       theme(axis.text.y = element_text(hjust = 1, vjust  = 0.3)) +
       scale_x_discrete(labels = function(x) str_wrap(x, width = 40)) +
@@ -417,7 +564,7 @@ go_plots <- lapply(dxs, function(dx){
 
 pdf(paste0( output_folder,"/", file_index, "_clusterProfilers_results.pdf"), width = 24, height = 14)
 lapply(dxs, function(dx){
-  idx <- grep(dx, names(go_results), value = T)
+  idx <- grep(dx, names(goresultsup_all), value = T)
   plot_command <- paste0("go_plots[['",dx,"']][[", 1:length(idx),"]]", collapse = "+") %>% 
     paste0(" + plot_annotation(title = dx) + plot_layout(nrow = 2)")
   eval(parse(text = plot_command))
