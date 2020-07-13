@@ -365,6 +365,18 @@ go_results <- lapply(names(de_dx_day), function(dx_day){
 })
 save(goresultsup_all, file = file.path(parent_folder,"clusterProfiler_results2.rdata"))
 
+go_enrich_raw2 <- de_dx_day[[1]] %>%
+  dplyr::filter(p <0.005) %>%
+  filter(beta < 0) %>%
+  distinct(ensembl_gene_id, .keep_all = TRUE) %>%
+  dplyr::select(ensembl_gene_id) %>%
+  unlist()
+  
+
+xxx <- compareCluster(go_enrich_raw2, fun = "enrichGO",OrgDb = "org.Hs.eg.db",
+                      universe = distinct(dat_clusterProfiler[[1]], ensembl_gene_id, .keep_all = TRUE),
+                      keyType = "ENSEMBL",
+                      readable = T, pvalueCutoff = 0.05)
 
 # Aaron's code for up vs down -------------------------------
 
@@ -383,6 +395,7 @@ lapply(c("up_regulated", "down_regulated"),function(direction){
       if(direction == "up_regulated") {
         go_enrich_raw <- go_enrich_raw %>% 
           filter(beta > 0) %>%
+          #one instance of each gene id goes into the GO analysis
           distinct(ensembl_gene_id, .keep_all = TRUE)
       } else if (direction == "down_regulated"){
         go_enrich_raw <- go_enrich_raw %>% 
@@ -527,14 +540,14 @@ names(go_reg) <- dx_stage
 
 
 # Analyze cluster profiler results --------------------------------------------------------------------------------
-load(file.path(output_folder,"clusterProfiler_results_up_down.rdata"))
-
-names(go_results) <- dx_stage
+# load(file.path(output_folder,"clusterProfiler_results_up_down.rdata"))
+# 
+# names(go_results) <- dx_stage
 
 go_plots <- lapply(dxs, function(dx){
   idx <- grep(dx, names(go_results), value = T)
   dx_plots <- lapply(idx, function(dx_day){
-    p1 <- goresultsup_all[[dx_day]] %>%
+    p1 <- goresultsup_all[[dx_day]] %>%  #edited input file
       mutate(log10.p.value = -log10(pvalue), 
              go_size = as.numeric(gsub("/.*","",BgRatio))) %>% 
       filter(pvalue < 0.05 & go_size > 50 & Count > 3) %>% 
@@ -549,9 +562,9 @@ go_plots <- lapply(dxs, function(dx){
       labs(y = "-log10(p value)", x = "") +
       theme(axis.text.y = element_text(hjust = 1, vjust  = 0.3)) +
       scale_x_discrete(labels = function(x) str_wrap(x, width = 40)) +
-      scale_fill_manual(values = c("grey30", "grey70")) +
+      scale_fill_manual(values = c("down_regulated" = "#ff7878", "up_regulated" = "#77dd77")) +  #c("grey30", "grey70")
       coord_flip() +
-      geom_hline(yintercept = -log10(0.05), color = "indianred") +
+      geom_hline(yintercept = -log10(0.05), color = "blue4") +
       ggtitle(dx_day)
     if(grepl("all_timepoints", dx_day)){
       p1 <- p1 + theme(legend.position = "bottom") 
@@ -580,7 +593,7 @@ all_tps_plots <- lapply(go_plots, function(l1){
           legend.position = "bottom")
   
 })
-for (i in c(1:7,9)) {
+for (i in c(1:6,8:9)) {
   
   all_tps_plots[[i]] <- all_tps_plots[[i]] + theme(legend.position = "none") 
 }
@@ -925,8 +938,8 @@ file_index = file_index + 1
 # overlap of DEGs -------------------------------------------------------------------------------------------------
 all_degs <- lapply(de_dx_day, function(x){
   x %>% 
-    filter(p < 0.005) %>% 
-    select(ensembl_transcript_id) %>% 
+    dplyr::filter(p < 0.005) %>% 
+    dplyr::select(ensembl_transcript_id) %>% 
     unlist()
 })
 
