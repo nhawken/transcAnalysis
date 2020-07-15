@@ -1075,7 +1075,8 @@ dev.off()
 
 
 
-#EWCE-------
+#EWCE----------------------------
+#similar to GSEA, but uses cell types (leverages single cell)
 ##!!!!! run EWCE on hoffman
 ewce_dir <- file.path(output_folder,"EWCE")
 datasets <- c("hcs_pasca","PolioudakisNeuralFetal") 
