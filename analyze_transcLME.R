@@ -519,23 +519,23 @@ go_results_updown <- lapply(names(dat_clusterProfiler), function(dx_day){
 
 
 # Determine whether GO cluster is UP or DOWN regulated
-names(go_results) <- dx_stage
-
-go_reg <- lapply(dx_stage, function(dx_s){
-  go_dx <- go_results[[dx_s]] %>%
-    mutate(sep_hgnc = str_split(geneID, "/"))
-  go_ensem <- lapply(go_dx$sep_hgnc, function(hgnc_list){
-    output <- vector(mode = "list", length = length(hgnc_list))
-    for (idx in 1:length(hgnc_list)){
-      anno_list <- dplyr::filter(transAnno_id, hgnc_symbol == hgnc_list[idx])
-      output[[idx]] <- anno_list$ensembl_transcript_id      
-    }
-  unlist(output)
-  })
-  mutate(go_dx, ensemblList = go_ensem)
-})
-
-names(go_reg) <- dx_stage
+# names(go_results) <- dx_stage
+# 
+# go_reg <- lapply(dx_stage, function(dx_s){
+#   go_dx <- go_results[[dx_s]] %>%
+#     mutate(sep_hgnc = str_split(geneID, "/"))
+#   go_ensem <- lapply(go_dx$sep_hgnc, function(hgnc_list){
+#     output <- vector(mode = "list", length = length(hgnc_list))
+#     for (idx in 1:length(hgnc_list)){
+#       anno_list <- dplyr::filter(transAnno_id, hgnc_symbol == hgnc_list[idx])
+#       output[[idx]] <- anno_list$ensembl_transcript_id      
+#     }
+#   unlist(output)
+#   })
+#   mutate(go_dx, ensemblList = go_ensem)
+# })
+# 
+# names(go_reg) <- dx_stage
 
 
 
