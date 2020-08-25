@@ -193,10 +193,11 @@ de_all_n <- as_tibble(rbind(dei_n, deg_n)) %>%
 # plotting counts of differentially expressed genes and transcripts as bar charts
 dei_deg_bar_counts <- lapply(unique(de_all_n$pvalue), function(pset){
   de_all_dat <- dplyr::filter(de_all_n, pvalue == pset) %>%
-    ggplot( aes( fill = dataset, y = value, x = stage)) +
-    geom_bar(position = "dodge2", stat = "identity")+
+    ggplot( aes( fill = variable, alpha = dataset, y = value, x = stage)) +
+    geom_bar(position = "dodge", stat = "identity")+
     facet_wrap(~Dx, ncol = 3, scales = "free_y") +
     ggtitle(paste0("DEI and DEG at ", pset)) +
+    scale_alpha_discrete(range = c(0.4, 1)) +
     theme(axis.text.x = element_text(
       angle = -90,
       hjust = 0,
@@ -233,7 +234,7 @@ deg_not_dei_genelist <- lapply(dx_stage, function(dx_stg){
 }) %>% setNames(dx_stage)
 
 
-# Ensembl Gene id venn diagrams
+# Ensembl Gene id venn diagrams ---------------------------------------
 library(VennDiagram)
 library(gridExtra)
 dei_deg_venn <- lapply(c("downRegulated", "upRegulated"), function(direc){
@@ -264,26 +265,10 @@ dev.off()
 file_index <- file_index + 1
 
 
-
-library(gt)
-
-# 
-# de_all_wide %>%
-#   gt(rowname_col = "Dx") %>%
-#   tab_header(title = "Differentially Expressed Counts") %>%
-#   fmt_number(
-#     columns = vars(value),
-#     decimals = 0,
-#     use_seps = TRUE) %<%
-#   tab_spanner(
-#     label = "Direction",
-#     
-#   )
-#   
  
-# comparing GO results
+# comparing GO results-------------------------------------------------------------------
 
-load("clusterProfiler_results2.rdata")
+load("clusterProfiler_results2.rdata") 
 dei_go <- goresultsup_all
 load("gene_clusterProfiler_results_up_down.rdata")
 deg_go <- go_results
@@ -323,7 +308,7 @@ for (dx_stg in dx_stage){
   }
 }
 
-# GO id venn diagrams
+# GO id venn diagrams ---------------------------------------------------------
 library(VennDiagram)
 library(gridExtra)
 go_venn <- lapply(c("down_regulated", "up_regulated"), function(direc){
@@ -343,6 +328,8 @@ go_venn <- lapply(c("down_regulated", "up_regulated"), function(direc){
 }) %>% setNames(c("downRegulated", "upRegulated")) %>%
   unlist(recursive = FALSE)
 
+
+# get list of GO elements that are unique to the DEI set
 go_partitions <- lapply(c("down_regulated", "up_regulated"), function(direc){
   lapply(dx_stage, function(dx_stg){
     dei_go_list <- dplyr::filter(sig_go_terms[[dx_stg]], Direction == direc & dataset == "transcript")
@@ -351,8 +338,8 @@ go_partitions <- lapply(c("down_regulated", "up_regulated"), function(direc){
     deg_go_id <- deg_go_list$ID
     if(length(dei_go_id) == 0 | length(deg_go_id) == 0){ plot.new()}
     else{
-      get.venn.partitions(x = list(dei_go_id, deg_go_id))
-                   
+      dei_diff <- setdiff(dei_go_id, deg_go_id)
+      dplyr::filter(dei_go_list, ID %in% dei_diff)
     }
   }) %>% setNames(dx_stage)
 }) %>% setNames(c("downRegulated", "upRegulated")) %>%
@@ -370,6 +357,3 @@ for (dx_id in dxs){
 }
 dev.off()
 file_index <- file_index + 1
-go_dei_only <-lapply(dx_stage, function(dx_stg){
-    dei_go_list <- dplyr::filter(sig_go_terms[[dx_stg]], Direction == direc & dataset == "transcript")
-    dei_go_id <- dei_go_list$ID
