@@ -1,3 +1,78 @@
+setwd("C:/Users/natha/Documents/Geschwind Rotation 2020/transcAnalysis/")
+options(stringsAsFactors = FALSE)
+
+library(tidyverse)
+library(RColorBrewer)
+library(qqman)
+library(patchwork)
+library(corrplot)
+library(pheatmap)
+library(gridExtra)
+library(UpSetR)
+library(grid)
+library(igraph)
+library(ggraph)
+
+
+file_index <- 1
+parent_folder  <-  getwd()
+# # output_folder  <-  file.path(parent_folder, "LME","dx_day")
+output_folder = paste(getwd(), '/transCNVcomp_OUT_',Sys.Date(),'/', sep = "") # SET AN OUTPUT PATH HERE
+dir.create(output_folder, showWarnings = F, recursive = T)
+#time0 <- proc.time()
+
+theme_set(theme_classic(base_size = 18))
+
+load("all_transcript_data.Rdata")
+load(file.path(parent_folder,"input_for_DE_transc.rdata"))
+
+cond <- "dx_day"
+
+
+de_results <- read_csv(paste0(parent_folder, "/",cond, "_lme_DE.csv"))[,-2] %>% #calls all but the 2nd col of the matrix
+  rename("ensembl_transcript_id" = "X1") %>%  #renames unlabeled column
+  setNames(gsub("Idiopathic(.?ASD)?","IdiopathicASD", colnames(.))) #rename idiopathic ASD columns 
+
+
+
+dxs <- gsub(".*\\.(.*?)_.*","\\1", colnames(de_results)) %>% #gsub one or more of any charater followed by a period, (.*?) is the capture group
+  unique() %>%  #gets rid of Beta/p/SE. in front, keeps the next dx, gets rid of the _025/50/late afterwards
+  sort() %>%
+  .[. != "ensembl_transcript_id"] 
+
+stages <- gsub(".*\\..*?_(.*)","\\1", colnames(de_results)) %>% #get rid of Beta/p/Se. in front then gets rid of Dx_, capture anything after Dx
+  unique() %>% 
+  sort() %>%
+  .[. != "ensembl_transcript_id"] 
+
+dx_stage <- gsub(".*\\.(.*?_.*)","\\1", colnames(de_results)) %>%  #get rid of Beta/p/SE., then capture dx and stages
+  unique() %>% 
+  sort() %>%
+  .[. != "ensembl_transcript_id"] 
+
+
+# # correct p value and add annotation
+de_results_adj <- lapply(dx_stage, function(dx_stg){ #for each dx_stage, create a list with 1 data frame (tibble) containing beta, SE, p, fdr
+  p_val_col <- paste0("p.",dx_stg)
+  de_results %>% 
+    dplyr::select(contains(dx_stg)) %>% 
+    mutate(fdr =   !!as.name(p_val_col) %>% p.adjust(., method = "fdr")) %>% #control the false discovery rate, the expected proportion of false discoveries amongst the rejected hypotheses
+    # mutate(data fram, new_var = [existing var])
+    rename_at(vars(matches("fdr")), list(~paste0("fdr.",dx_stg)))
+}) %>% bind_cols() %>%  #combines dataframes, list of dataframs
+  mutate(ensembl_transcript_id = de_results$ensembl_transcript_id) %>% #add new column to df with the ensembl tanscript ids
+  dplyr::select(ensembl_transcript_id, everything()) #puts all other columns after the ID column
+
+
+
+transAnno <-  transcriptAnnoRaw %>%
+  filter(ensembl_transcript_id %in% rownames(datTrans_reg_batch)) %>%
+  filter(!duplicated(ensembl_transcript_id))
+
+
+
+
+
 # plot logFC around the CNV locus ---------------------------------------------------------------------------------
 isoID <- paste(transAnno$hgnc_symbol, str_sub(transAnno$ensembl_transcript_id, -6, -1), sep = "_")
 transAnno_id <- mutate(transAnno, hgnc_iso_symbol = isoID)
@@ -245,7 +320,7 @@ dev.off()
 file_index <- file_index + 1
 
 
-#box plot of DGCR8 isoforms
+#box plot of DGCR8 isoforms------------------------------------
 dgcr8_exp_plots <- lapply(names(sample_by_dx_day),function(dx){
   lapply(names(sample_by_dx_day[[dx]]), function(day){
     dgcr8_data <- datTrans_dgcr8_df[[dx]][[day]]
@@ -346,7 +421,7 @@ de_results_adj_cnv <- lapply(1:length(loci), function(locus) {
 }) %>% setNames(names(loci))
 
 
-#create heatmaps of betas WORKING
+#create heatmaps of betas WORKING-----------------------------------------------
 de_beta_heat <- lapply(1:length(de_results_adj_cnv), function(locus){
   de_locus <- de_results_adj_cnv[[locus]] %>%
     arrange(start_position) %>% 
@@ -361,7 +436,7 @@ de_beta_heat <- lapply(1:length(de_results_adj_cnv), function(locus){
       ggtitle(names(loci)[locus])
 }) %>% setNames(names(loci))
 
-#create heatmaps TESTING HGNC
+#create heatmaps TESTING HGNC---------------------------------------------------
 de_beta_heat <- lapply(1:length(de_results_adj_cnv), function(locus){
   de_locus <- de_results_adj_cnv[[locus]] %>%
     arrange(start_position) %>% 
